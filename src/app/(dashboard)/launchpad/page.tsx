@@ -43,16 +43,25 @@ export default function LaunchpadPage() {
           agentsResult,
           callsResult,
           campaignsResult,
+          orgResult,
         ] = await Promise.all([
           supabase.from("contacts").select("id").limit(1),
           supabase.from("ai_agents").select("id").limit(1),
           supabase.from("calls").select("id").eq("status", "completed").limit(1),
           supabase.from("campaigns").select("id").limit(1),
+          supabase.from("organizations").select("subscription_status, trial_ends_at").limit(1).maybeSingle(),
         ]);
         const contactsCount = contactsResult.data?.length || 0;
         const agentsCount = agentsResult.data?.length || 0;
         const callsCount = callsResult.data?.length || 0;
         const campaignsCount = campaignsResult.data?.length || 0;
+
+        const subStatus = orgResult.data?.subscription_status;
+        const trialEndsAt = orgResult.data?.trial_ends_at;
+        const hasActiveSub =
+          subStatus === "active" ||
+          subStatus === "trialing" ||
+          (!!trialEndsAt && new Date(trialEndsAt) > new Date());
 
         const setupSteps: SetupStep[] = [
           {
@@ -120,7 +129,7 @@ export default function LaunchpadPage() {
           },
         ];
 
-        setSteps(setupSteps);
+        setSteps(hasActiveSub ? setupSteps.filter((s) => s.id !== 5) : setupSteps);
       } catch (error) {
         console.error("Error fetching setup status:", error);
         setSteps([
