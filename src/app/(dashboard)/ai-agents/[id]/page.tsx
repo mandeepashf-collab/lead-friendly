@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAIAgent, updateAIAgent } from "@/hooks/use-ai-agents";
+import { getVoiceMeta } from "@/lib/voices";
 import { AgentChatSimulator } from "@/components/agents/AgentChatSimulator";
 import { VoiceTestCall } from "@/components/agents/VoiceTestCall";
 import { WebRTCCall } from "@/components/agents/WebRTCCall";
@@ -725,7 +726,26 @@ export default function EditAgentPage() {
     </div>
   );
 
-  const currentVoice = voices.find(v => v.id === form.voice_id);
+  // Look up current voice. Prefer the live API result, but fall back to
+  // our static mapping (src/lib/voices.ts) so the UI never shows a raw
+  // voice ID like iP95p4xoKVk53GoZ742B.
+  let currentVoice = voices.find(v => v.id === form.voice_id) as ElevenLabsVoice | undefined;
+  if (!currentVoice && form.voice_id) {
+    const meta = getVoiceMeta(form.voice_id);
+    if (meta) {
+      currentVoice = {
+        id: meta.id,
+        name: meta.name,
+        preview_url: "",
+        gender: meta.gender ?? "",
+        accent: meta.accent ?? "",
+        age: "",
+        use_case: "",
+        description: meta.description ?? "",
+        category: "premade",
+      };
+    }
+  }
   const isExtraTab = extraTab !== null;
 
   return (

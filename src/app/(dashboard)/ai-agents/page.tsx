@@ -4,18 +4,14 @@ import Link from "next/link";
 import { Bot, Plus, Phone, Zap, Settings2, Trash2, Sparkles, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAIAgents, deleteAIAgent } from "@/hooks/use-ai-agents";
+import { useCallStats, useAgentCallStats } from "@/hooks/use-call-stats";
 import { AGENT_TEMPLATES, FEATURED_TEMPLATES } from "@/lib/agent-templates";
+import { getVoiceName } from "@/lib/voices";
 import type { AIAgent } from "@/types/database";
 
-const VOICES: Record<string, string> = {
-  "aura-2-luna-en": "Luna", "aura-2-orion-en": "Orion",
-  "aura-2-stella-en": "Stella", "aura-2-asteria-en": "Asteria",
-  "aura-2-athena-en": "Athena", "aura-2-helios-en": "Helios",
-  "aura-2-hera-en": "Hera", "aura-2-zeus-en": "Zeus",
-};
-
 function AgentCard({ agent, onDelete }: { agent: AIAgent; onDelete: () => void }) {
-  const voiceName = VOICES[agent.voice_id || ""] || agent.voice_id?.split("-").pop() || "Custom";
+  const voiceName = getVoiceName(agent.voice_id);
+  const { stats: agentStats } = useAgentCallStats(agent.id);
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 space-y-4 hover:border-zinc-700 transition-colors">
       <div className="flex items-start justify-between">
@@ -39,7 +35,7 @@ function AgentCard({ agent, onDelete }: { agent: AIAgent; onDelete: () => void }
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-lg bg-zinc-950/50 p-2.5 text-center">
-          <p className="text-lg font-bold text-white">{(agent.total_calls || 0).toLocaleString()}</p>
+          <p className="text-lg font-bold text-white">{agentStats.total_calls.toLocaleString()}</p>
           <p className="text-xs text-zinc-600">Total calls</p>
         </div>
         <div className="rounded-lg bg-zinc-950/50 p-2.5 text-center">
@@ -66,8 +62,11 @@ function AgentCard({ agent, onDelete }: { agent: AIAgent; onDelete: () => void }
 
 export default function AIAgentsPage() {
   const { agents, loading, refetch } = useAIAgents();
+  const { stats: callStats } = useCallStats();
   const activeCount = agents.filter(a => a.status === "active").length;
-  const totalCalls = agents.reduce((s, a) => s + (a.total_calls || 0), 0);
+  // Use unified call stats (call_stats_by_org view) — the `agent.total_calls`
+  // column is never incremented, so summing it always returned 0.
+  const totalCalls = callStats.total_calls;
 
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this agent?")) return;
