@@ -7,13 +7,49 @@
  *  - Webhook verification
  */
 
-import { AccessToken, RoomAgentDispatch, RoomServiceClient, WebhookReceiver } from "livekit-server-sdk";
+import {
+  AccessToken,
+  AgentDispatchClient,
+  RoomAgentDispatch,
+  RoomConfiguration,
+  RoomServiceClient,
+  WebhookReceiver,
+} from "livekit-server-sdk";
 
 // ── Environment ────────────────────────────────────────────────
 const LK_URL = process.env.LIVEKIT_URL ?? "";
 const LK_API_KEY = process.env.LIVEKIT_API_KEY ?? "";
 const LK_API_SECRET = process.env.LIVEKIT_API_SECRET ?? "";
 const LK_WEBHOOK_SECRET = process.env.LIVEKIT_WEBHOOK_SECRET ?? LK_API_SECRET;
+
+// ── Agent Dispatch Service ─────────────────────────────────────
+
+let _agentDispatch: AgentDispatchClient | null = null;
+
+export function getAgentDispatchClient(): AgentDispatchClient {
+  if (!_agentDispatch) {
+    if (!LK_URL || !LK_API_KEY || !LK_API_SECRET) {
+      throw new Error("Missing LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET env vars");
+    }
+    // AgentDispatchClient needs https:// URL, not wss://
+    const httpUrl = LK_URL.replace("wss://", "https://").replace("ws://", "http://");
+    _agentDispatch = new AgentDispatchClient(httpUrl, LK_API_KEY, LK_API_SECRET);
+  }
+  return _agentDispatch;
+}
+
+/**
+ * Explicitly dispatch an agent to a room.
+ * This is the recommended way to trigger agent dispatch in LiveKit Cloud.
+ */
+export async function dispatchAgent(
+  roomName: string,
+  agentName: string,
+  metadata?: string,
+): Promise<void> {
+  const client = getAgentDispatchClient();
+  await client.createDispatch(roomName, agentName, metadata ? { metadata } : undefined);
+}
 
 // ── Room Service ───────────────────────────────────────────────
 
@@ -32,16 +68,9 @@ export function getRoomService(): RoomServiceClient {
 /**
  * Create a LiveKit room with metadata attached.
  *
- * @param roomName  Unique room name (e.g. `call_{agentId}_{timestamp}`)
- * @param metadata  Stringified JSON metadata the agent worker will read
- * @param emptyTimeout  Seconds to keep the room alive after last participant leaves (default 300)
- */
-/**
- * Create a LiveKit room with metadata attached and agent dispatch pre-wired.
- *
- * We use explicit dispatch (agent_name = "lead-friendly") so the worker on
- * Railway receives a JobRequest for this room as soon as it is created,
- * without needing the browser participant to connect first.
+ * Agent dispatch is handled separately via dispatchAgent() using the
+ * AgentDispatchClient — this is the reliable way to trigger explicit dispatch
+ * in LiveKit Cloud.
  */
 export async function createRoom(
   roomName: string,
@@ -53,12 +82,6 @@ export async function createRoom(
     name: roomName,
     emptyTimeout,
     metadata,
-    agents: [
-      new RoomAgentDispatch({
-        agentName: "lead-friendly",
-        metadata,
-      }),
-    ],
   });
 }
 

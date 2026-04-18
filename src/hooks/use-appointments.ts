@@ -96,6 +96,9 @@ export function useUpcomingAppointments(limit: number = 5) {
   return { appointments, loading };
 }
 
+// UUID v4 regex for validating assigned_to before sending to DB
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function createAppointment(
   appointment: Partial<Appointment>
 ): Promise<{ data: Appointment | null; error: string | null }> {
@@ -114,9 +117,23 @@ export async function createAppointment(
 
   if (!profile) return { data: null, error: "No profile found" };
 
+  // Sanitize assigned_to: must be a valid UUID or null.
+  // The UI currently sends free-text names which crash Postgres.
+  const sanitized = { ...appointment };
+  if (sanitized.assigned_to && !UUID_RE.test(sanitized.assigned_to)) {
+    sanitized.assigned_to = null;
+  }
+  if (!sanitized.assigned_to) sanitized.assigned_to = null;
+
+  // Sanitize contact_id the same way
+  if (sanitized.contact_id && !UUID_RE.test(sanitized.contact_id)) {
+    sanitized.contact_id = null;
+  }
+  if (!sanitized.contact_id) sanitized.contact_id = null;
+
   const { data, error } = await supabase
     .from("appointments")
-    .insert({ ...appointment, organization_id: profile.organization_id, booked_by: user.id })
+    .insert({ ...sanitized, organization_id: profile.organization_id, booked_by: user.id })
     .select()
     .single();
 
@@ -128,7 +145,17 @@ export async function updateAppointment(
   updates: Partial<Appointment>
 ): Promise<{ error: string | null }> {
   const supabase = createClient();
-  const { error } = await supabase.from("appointments").update(updates).eq("id", id);
+
+  // Sanitize UUID fields
+  const sanitized = { ...updates };
+  if (sanitized.assigned_to !== undefined && !UUID_RE.test(sanitized.assigned_to || "")) {
+    sanitized.assigned_to = null;
+  }
+  if (sanitized.contact_id !== undefined && !UUID_RE.test(sanitized.contact_id || "")) {
+    sanitized.contact_id = null;
+  }
+
+  const { error } = await supabase.from("appointments").update(sanitized).eq("id", id);
   return { error: error?.message || null };
 }
 

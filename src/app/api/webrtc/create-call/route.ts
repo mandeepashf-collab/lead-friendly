@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { createRoom, createAccessToken, getLiveKitUrl } from "@/lib/livekit/server";
+import { createRoom, createAccessToken, dispatchAgent, getLiveKitUrl } from "@/lib/livekit/server";
 
 /**
  * POST /api/webrtc/create-call
@@ -166,6 +166,19 @@ export async function POST(req: NextRequest) {
       // Roll back the call record so we don't leak orphans
       await supabaseAdmin.from("calls").delete().eq("id", callRecord.id);
       throw err;
+    }
+
+    // ── 4b. Explicitly dispatch the agent to this room ────────────
+    // Using AgentDispatchClient.createDispatch() is the reliable way to
+    // trigger explicit dispatch in LiveKit Cloud. The `agents` array in
+    // CreateRoomRequest does NOT reliably trigger worker dispatch.
+    try {
+      await dispatchAgent(roomName, "lead-friendly", fullMetadata);
+      console.log(`[webrtc/create-call] agent dispatched to room=${roomName}`);
+    } catch (dispatchErr) {
+      console.error("[webrtc/create-call] agent dispatch failed:", dispatchErr);
+      // Don't fail the whole call — the room exists and the browser can connect.
+      // The agent may still auto-join if automatic dispatch is enabled as fallback.
     }
 
     console.log(`[webrtc/create-call] room=${roomName} call=${callRecord.id}`);
