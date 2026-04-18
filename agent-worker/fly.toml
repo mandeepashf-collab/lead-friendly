@@ -1,0 +1,11 @@
+app = "lead-friendly-agent"
+primary_region = "iad"
+
+[build]
+dockerfile = "Dockerfile"
+
+[processes]
+agent = "python main.py start"
+
+[env]
+LIVEKIT_URL = "wss://lead-friendly-bc511t0j.livekit.cloud"

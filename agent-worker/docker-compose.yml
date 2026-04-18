@@ -1,0 +1,14 @@
+version: "3.8"
+
+services:
+  agent:
+    build: .
+    env_file: .env
+    restart: unless-stopped
+    environment:
+      - LIVEKIT_URL=wss://lead-friendly-bc511t0j.livekit.cloud
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 import { createAccessToken } from "@/lib/livekit/server";
 
 /**
@@ -12,6 +14,19 @@ import { createAccessToken } from "@/lib/livekit/server";
  */
 export async function POST(req: NextRequest) {
   try {
+    // Auth check
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } },
+    );
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { roomName, identity } = (await req.json()) as {
       roomName: string;
       identity: string;
