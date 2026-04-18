@@ -110,10 +110,25 @@ export interface TokenOptions {
   ttlSeconds?: number;
   /** Attach metadata to the participant */
   metadata?: string;
+  /**
+   * Optional agent dispatch to embed in the token.
+   * If provided, the LiveKit server will dispatch the named agent to the room
+   * when the participant with this token joins. This is a belt-and-suspenders
+   * backup to the AgentDispatchClient.createDispatch() call.
+   */
+  agentDispatch?: {
+    agentName: string;
+    metadata?: string;
+  };
 }
 
 /**
  * Mint a LiveKit JWT access token.
+ *
+ * Optionally embeds a RoomConfiguration with agent dispatch so that when the
+ * participant joins, LiveKit Cloud auto-dispatches the named agent. This is
+ * a fallback in case AgentDispatchClient.createDispatch() is not reliably
+ * triggering dispatch (see COWORK_TASK.md P0 alternative #3).
  */
 export async function createAccessToken(opts: TokenOptions): Promise<string> {
   if (!LK_API_KEY || !LK_API_SECRET) {
@@ -133,6 +148,20 @@ export async function createAccessToken(opts: TokenOptions): Promise<string> {
     canPublish: opts.canPublish ?? true,
     canSubscribe: opts.canSubscribe ?? true,
   });
+
+  // Embed agent dispatch in the token's RoomConfiguration — belt-and-suspenders
+  // backup to the AgentDispatchClient call.
+  if (opts.agentDispatch) {
+    const { agentName, metadata: agentMetadata } = opts.agentDispatch;
+    token.roomConfig = new RoomConfiguration({
+      agents: [
+        new RoomAgentDispatch({
+          agentName,
+          metadata: agentMetadata ?? "",
+        }),
+      ],
+    });
+  }
 
   return await token.toJwt();
 }

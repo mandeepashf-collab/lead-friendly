@@ -169,21 +169,32 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 4b. Explicitly dispatch the agent to this room ────────────
-    // Using AgentDispatchClient.createDispatch() is the reliable way to
-    // trigger explicit dispatch in LiveKit Cloud. The `agents` array in
-    // CreateRoomRequest does NOT reliably trigger worker dispatch.
+    // Dispatch path #1: AgentDispatchClient.createDispatch()
+    // This is the recommended programmatic dispatch API.
+    let explicitDispatchOk = false;
     try {
       await dispatchAgent(roomName, "lead-friendly", fullMetadata);
-      console.log(`[webrtc/create-call] agent dispatched to room=${roomName}`);
+      explicitDispatchOk = true;
+      console.log(
+        `[webrtc/create-call] explicit dispatch OK room=${roomName} agent=lead-friendly`,
+      );
     } catch (dispatchErr) {
-      console.error("[webrtc/create-call] agent dispatch failed:", dispatchErr);
-      // Don't fail the whole call — the room exists and the browser can connect.
-      // The agent may still auto-join if automatic dispatch is enabled as fallback.
+      console.error(
+        "[webrtc/create-call] explicit dispatch FAILED:",
+        dispatchErr instanceof Error ? dispatchErr.message : dispatchErr,
+      );
+      // Don't fail the whole call — the token-embedded dispatch below is a
+      // second path that will trigger when the browser participant joins.
     }
 
-    console.log(`[webrtc/create-call] room=${roomName} call=${callRecord.id}`);
+    console.log(
+      `[webrtc/create-call] room=${roomName} call=${callRecord.id} explicitDispatchOk=${explicitDispatchOk}`,
+    );
 
     // ── 5. Mint browser participant token ──────────────────────
+    // Dispatch path #2: embed RoomAgentDispatch in the participant's token so
+    // LiveKit Cloud dispatches the agent on participant join. This is a
+    // belt-and-suspenders backup to the AgentDispatchClient path above.
     const participantIdentity = contactId
       ? `contact_${contactId}`
       : `web_user_${Date.now()}`;
@@ -195,6 +206,10 @@ export async function POST(req: NextRequest) {
       canPublish: true,
       canSubscribe: true,
       ttlSeconds: 3600,
+      agentDispatch: {
+        agentName: "lead-friendly",
+        metadata: fullMetadata,
+      },
     });
 
     // Track active calls for rate limiting
