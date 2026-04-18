@@ -107,33 +107,37 @@ export default function DashboardPage() {
         const today = new Date().toISOString().split("T")[0];
         const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
 
+        // Pull call stats from the unified source (call_stats_by_org view)
+        // so Dashboard agrees with Call Logs / AI Agents / Billing.
+        const unifiedStatsPromise = fetch("/api/stats/calls", { cache: "no-store" })
+          .then(r => (r.ok ? r.json() : null))
+          .catch(() => null);
+
         const [
-          contactsRes, callsTodayRes, oppsRes, recentCallsRes,
-          allCallsRes, appointmentsRes, campaignsRes, weekCallsRes,
+          contactsRes, oppsRes, recentCallsRes,
+          appointmentsRes, campaignsRes, weekCallsRes,
+          unifiedStats,
         ] = await Promise.all([
           supabase.from("contacts").select("id", { count: "exact", head: true }),
-          supabase.from("calls").select("id", { count: "exact", head: true }).gte("created_at", today),
           supabase.from("opportunities").select("value"),
           supabase.from("calls")
             .select("id, status, outcome, duration_seconds, created_at, ai_agent_id, contacts:contact_id(first_name, last_name)")
             .order("created_at", { ascending: false }).limit(10),
-          supabase.from("calls").select("duration_seconds").eq("status", "completed"),
           supabase.from("appointments")
             .select("id, title, appointment_date, start_time, end_time, status, contacts:contact_id(first_name, last_name)")
             .gte("appointment_date", today)
             .order("appointment_date", { ascending: true }).order("start_time", { ascending: true }).limit(5),
           supabase.from("campaigns").select("id", { count: "exact", head: true }).eq("status", "active"),
           supabase.from("calls").select("created_at, outcome").gte("created_at", weekAgo),
+          unifiedStatsPromise,
         ]);
 
         const contactCount = contactsRes.count || 0;
-        const callsToday = callsTodayRes.count || 0;
+        const callsToday = unifiedStats?.calls_today ?? 0;
         const pipelineValue = (oppsRes.data || []).reduce((sum: number, o: { value?: number }) => sum + (o.value || 0), 0);
-        const totalMins = Math.round(
-          ((allCallsRes.data || []).reduce((s: number, c: { duration_seconds?: number }) => s + (c.duration_seconds || 0), 0)) / 60
-        );
+        const totalMins = unifiedStats?.minutes_this_month ?? 0;
 
-        // Appointments booked (all time)
+        // Appointments booked (all time) — keep separate since it's not in the call_stats view
         const { count: apptCount } = await supabase.from("appointments").select("id", { count: "exact", head: true });
 
         setStats((prev) => [
