@@ -5,9 +5,9 @@ node_modules/
 
 # build
 .next/
-out/
-build/
-dist/
+/out/
+/build/
+/dist/
 
 # env files
 .env
@@ -15,7 +15,7 @@ dist/
 .env.*.local
 
 # vercel
-.vercel/
+/.vercel/
 
 # debug
 npm-debug.log*
@@ -26,7 +26,6 @@ yarn-error.log*
 .DS_Store
 *.pem
 *.tsbuildinfo
-tsbuildinfo
 
 # archives and docs not needed in repo
 *.zip
