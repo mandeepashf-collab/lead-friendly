@@ -7,7 +7,7 @@
  *  - Webhook verification
  */
 
-import { AccessToken, RoomServiceClient, WebhookReceiver } from "livekit-server-sdk";
+import { AccessToken, RoomAgentDispatch, RoomServiceClient, WebhookReceiver } from "livekit-server-sdk";
 
 // ── Environment ────────────────────────────────────────────────
 const LK_URL = process.env.LIVEKIT_URL ?? "";
@@ -36,6 +36,13 @@ export function getRoomService(): RoomServiceClient {
  * @param metadata  Stringified JSON metadata the agent worker will read
  * @param emptyTimeout  Seconds to keep the room alive after last participant leaves (default 300)
  */
+/**
+ * Create a LiveKit room with metadata attached and agent dispatch pre-wired.
+ *
+ * We use explicit dispatch (agent_name = "lead-friendly") so the worker on
+ * Railway receives a JobRequest for this room as soon as it is created,
+ * without needing the browser participant to connect first.
+ */
 export async function createRoom(
   roomName: string,
   metadata: string,
@@ -46,6 +53,12 @@ export async function createRoom(
     name: roomName,
     emptyTimeout,
     metadata,
+    agents: [
+      new RoomAgentDispatch({
+        agentName: "lead-friendly",
+        metadata,
+      }),
+    ],
   });
 }
 

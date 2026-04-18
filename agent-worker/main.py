@@ -267,6 +267,7 @@ async def _run_voice_session(
         language="en",
         smart_format=True,
         interim_results=True,
+        endpointing_ms=150,
     )
 
     ai_temperature = agent_config.get("aiTemperature", 0.7)
@@ -301,7 +302,8 @@ async def _run_voice_session(
     # ── Create AgentSession ─────────────────────────────────────
     session = AgentSession(
         vad=ctx.proc.userdata["vad"],
-        min_endpointing_delay=0.5,
+        min_endpointing_delay=0.2,
+        max_endpointing_delay=3.0,
         min_interruption_words=2,
         allow_interruptions=True,
         userdata={
@@ -450,5 +452,6 @@ if __name__ == "__main__":
         WorkerOptions(
             entrypoint_fnc=entrypoint,
             prewarm_fnc=prewarm,
+            agent_name="lead-friendly",
         )
     )

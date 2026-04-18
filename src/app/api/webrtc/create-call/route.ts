@@ -131,30 +131,7 @@ export async function POST(req: NextRequest) {
       testMode: !!testMode,
     };
 
-    const roomMetadata = JSON.stringify({
-      agentConfig,
-      contactId: contactId ?? null,
-    });
-
-    // ── 3. Create LiveKit room ─────────────────────────────────
-    await createRoom(roomName, roomMetadata);
-    console.log(`[webrtc/create-call] room created: ${roomName}`);
-
-    // ── 4. Mint browser participant token ──────────────────────
-    const participantIdentity = contactId
-      ? `contact_${contactId}`
-      : `web_user_${Date.now()}`;
-
-    const accessToken = await createAccessToken({
-      identity: participantIdentity,
-      name: "Caller",
-      room: roomName,
-      canPublish: true,
-      canSubscribe: true,
-      ttlSeconds: 3600,
-    });
-
-    // ── 5. Create call record ──────────────────────────────────
+    // ── 3. Create call record FIRST so we have callRecordId for room metadata ──
     const { data: callRecord, error: callErr } = await supabaseAdmin
       .from("calls")
       .insert({
@@ -172,16 +149,10 @@ export async function POST(req: NextRequest) {
 
     if (callErr) {
       console.error("[webrtc/create-call] call insert failed:", callErr.message);
-      // Room was already created — try to clean up
-      try {
-        const { deleteRoom } = await import("@/lib/livekit/server");
-        await deleteRoom(roomName);
-      } catch { /* best effort */ }
       return NextResponse.json({ error: "Failed to create call record" }, { status: 500 });
     }
 
-    // ── 6. Update room metadata with callRecordId ──────────────
-    // The agent worker needs the DB call record ID for logging/outcomes
+    // ── 4. Create LiveKit room with full metadata + agent dispatch ──
     const fullMetadata = JSON.stringify({
       agentConfig,
       contactId: contactId ?? null,
@@ -189,12 +160,29 @@ export async function POST(req: NextRequest) {
     });
 
     try {
-      const { getRoomService } = await import("@/lib/livekit/server");
-      const svc = getRoomService();
-      await svc.updateRoomMetadata(roomName, fullMetadata);
+      await createRoom(roomName, fullMetadata);
     } catch (err) {
-      console.warn("[webrtc/create-call] metadata update failed (non-critical):", err);
+      console.error("[webrtc/create-call] room creation failed:", err);
+      // Roll back the call record so we don't leak orphans
+      await supabaseAdmin.from("calls").delete().eq("id", callRecord.id);
+      throw err;
     }
+
+    console.log(`[webrtc/create-call] room=${roomName} call=${callRecord.id}`);
+
+    // ── 5. Mint browser participant token ──────────────────────
+    const participantIdentity = contactId
+      ? `contact_${contactId}`
+      : `web_user_${Date.now()}`;
+
+    const accessToken = await createAccessToken({
+      identity: participantIdentity,
+      name: "Caller",
+      room: roomName,
+      canPublish: true,
+      canSubscribe: true,
+      ttlSeconds: 3600,
+    });
 
     // Track active calls for rate limiting
     activeCallsByOrg.set(orgId, (activeCallsByOrg.get(orgId) ?? 0) + 1);
@@ -204,11 +192,7 @@ export async function POST(req: NextRequest) {
       activeCallsByOrg.set(orgId, Math.max(0, current - 1));
     }, 12 * 60 * 1000);
 
-    console.log(
-      `[webrtc/create-call] ✓ room=${roomName} call=${callRecord.id} agent=${a.name}`,
-    );
-
-    // ── 7. Return connection details ───────────────────────────
+    // ── 6. Return connection details ───────────────────────────
     return NextResponse.json({
       serverUrl: getLiveKitUrl(),
       accessToken,
