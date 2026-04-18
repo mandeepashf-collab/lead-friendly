@@ -9,7 +9,7 @@ import type { NextRequest } from 'next/server'
 // 2. Custom domain routing — white-label sub-account detection
 // 3. Impersonation session — scope data access to sub-account
 
-const PUBLIC_ROUTES = ['/auth', '/login', '/register', '/api/voice', '/api/health', '/api/agents', '/pricing', '/_next', '/favicon', '/api/stripe/webhook']
+const PUBLIC_ROUTES = ['/auth', '/login', '/register', '/api/voice', '/api/health', '/api/agents', '/pricing', '/_next', '/favicon', '/api/stripe/webhook', '/api/webrtc/webhook']
 
 // Pages a user with no active subscription can still visit (so they can pay).
 // Anything NOT in this list redirects to /billing when subscription is inactive.
@@ -215,11 +215,17 @@ export async function middleware(request: NextRequest) {
   }
 
   // ── Auth check ──────────────────────────────────────────────
-  const { data: { session } } = await supabase.auth.getSession()
+  // Use getUser() instead of getSession() — getSession() only reads the
+  // cookie without server-side verification, so a stale or tampered JWT
+  // could bypass auth. getUser() validates the token with Supabase.
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
 
-  if (!session && !pathname.startsWith('/auth') && !pathname.startsWith('/login')) {
+  if ((!user || userError) && !pathname.startsWith('/auth') && !pathname.startsWith('/login') && !pathname.startsWith('/register')) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
+
+  // Keep a session reference for downstream checks (subscription gate, etc.)
+  const session = user ? { user } : null
 
   // ── Subscription gate (opt-in via SUBSCRIPTION_GATE_ENABLED) ────
   // Redirect users whose org has no active subscription to /billing so they

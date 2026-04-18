@@ -267,7 +267,6 @@ async def _run_voice_session(
         language="en",
         smart_format=True,
         interim_results=True,
-        endpointing=300,
     )
 
     ai_temperature = agent_config.get("aiTemperature", 0.7)

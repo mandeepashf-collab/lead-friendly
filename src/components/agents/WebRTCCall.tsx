@@ -110,6 +110,11 @@ export function WebRTCCall({ agentId, agentName, systemPrompt, voiceId }: Props)
       const room = new Room({
         adaptiveStream: true,
         dynacast: true,
+        // Force v0 signaling path — LiveKit Cloud returns 400 on /rtc/v1
+        // which prevents the SDK from falling back to v0 automatically.
+        // singlePeerConnection: false uses separate publisher/subscriber
+        // PeerConnections (v0 protocol) which LiveKit Cloud fully supports.
+        singlePeerConnection: false,
         audioCaptureDefaults: {
           echoCancellation: true,
           noiseSuppression: true,
