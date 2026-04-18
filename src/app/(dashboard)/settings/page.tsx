@@ -1,0 +1,581 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { Settings, Building2, Users, Key, Bell, Shield, Save, Eye, EyeOff, Zap, Plus, X, Loader2, ToggleLeft, ToggleRight, MessageSquare, Mail, Phone, Calendar, AlertCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
+import { useBrand } from "@/contexts/BrandContext";
+
+const TABS = ["organization", "team", "integrations", "notifications", "automations", "security"] as const;
+type Tab = typeof TABS[number];
+
+const TAB_LABELS: Record<Tab, string> = {
+  organization: "Organization",
+  team: "Team",
+  integrations: "Integrations",
+  notifications: "Notifications",
+  automations: "Automations",
+  security: "Security",
+};
+
+const TAB_ICONS: Record<Tab, React.ElementType> = {
+  organization: Building2,
+  team: Users,
+  integrations: Key,
+  notifications: Bell,
+  automations: Zap,
+  security: Shield,
+};
+
+function InputField({ label, value, onChange, type = "text", placeholder, hint }: {
+  label: string; value: string; onChange: (v: string) => void;
+  type?: string; placeholder?: string; hint?: string;
+}) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-sm font-medium text-zinc-300">{label}</label>
+      <div className="relative">
+        <input
+          type={type === "password" ? (show ? "text" : "password") : type}
+          value={value} onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-300 placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none"
+        />
+        {type === "password" && (
+          <button type="button" onClick={() => setShow(!show)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300">
+            {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        )}
+      </div>
+      {hint && <p className="text-xs text-zinc-600">{hint}</p>}
+    </div>
+  );
+}
+
+function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold text-white">{title}</h3>
+        {description && <p className="text-xs text-zinc-500 mt-0.5">{description}</p>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ─── Automations Tab ────────────────────────────────────────────────────────
+interface Automation {
+  id: string;
+  name: string;
+  trigger_type: string;
+  action_type: string;
+  delay_minutes: number;
+  is_active: boolean;
+  created_at: string;
+  templates?: { name: string } | null;
+}
+
+const TRIGGER_LABELS: Record<string, string> = {
+  appointment_booked:    "Appointment Booked",
+  appointment_reminder:  "Appointment Reminder",
+  appointment_completed: "Appointment Completed",
+  appointment_cancelled: "Appointment Cancelled",
+  missed_call:           "Missed Call",
+  new_contact:           "New Contact",
+};
+
+const ACTION_ICONS: Record<string, React.ElementType> = {
+  send_sms:   MessageSquare,
+  send_email: Mail,
+};
+
+function delayLabel(minutes: number) {
+  if (minutes === 0) return "Immediately";
+  if (minutes < 0) return `${Math.abs(minutes / 60)}h before`;
+  if (minutes < 60) return `${minutes}m after`;
+  if (minutes % 60 === 0) return `${minutes / 60}h after`;
+  return `${minutes}m after`;
+}
+
+function AutomationModal({
+  automation,
+  onClose,
+  onSaved,
+}: {
+  automation?: Partial<Automation>;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(automation?.name || "");
+  const [triggerType, setTriggerType] = useState(automation?.trigger_type || "appointment_booked");
+  const [actionType, setActionType] = useState(automation?.action_type || "send_sms");
+  const [templateId, setTemplateId] = useState("");
+  const [delayMinutes, setDelayMinutes] = useState(String(automation?.delay_minutes ?? 0));
+  const [templates, setTemplates] = useState<{ id: string; name: string; type: string }[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    createClient().from("templates").select("id, name, type").then(({ data }) => setTemplates(data || []));
+  }, []);
+
+  const save = async () => {
+    if (!name.trim()) { setError("Name is required."); return; }
+    setSaving(true);
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+      const payload = {
+        name,
+        trigger_type: triggerType,
+        action_type: actionType,
+        template_id: templateId || null,
+        delay_minutes: parseInt(delayMinutes) || 0,
+        is_active: true,
+        user_id: user.id,
+      };
+      if (automation?.id) {
+        await supabase.from("automations").update(payload).eq("id", automation.id);
+      } else {
+        await supabase.from("automations").insert(payload);
+      }
+      onSaved();
+    } catch (e: any) {
+      setError(e.message || "Failed to save.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div className="relative w-full max-w-lg rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-zinc-800 px-6 py-4">
+          <h2 className="text-lg font-semibold text-white">{automation?.id ? "Edit Automation" : "Add Automation"}</h2>
+          <button onClick={onClose} className="text-zinc-500 hover:text-white"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          {error && <p className="rounded-lg border border-red-800 bg-red-950/40 px-3 py-2 text-sm text-red-400">{error}</p>}
+          <div>
+            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Automation Name</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Appointment Reminder SMS"
+              className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-200 focus:border-indigo-500 focus:outline-none" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1.5">Trigger</label>
+              <select value={triggerType} onChange={(e) => setTriggerType(e.target.value)}
+                className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-200 focus:border-indigo-500 focus:outline-none">
+                {Object.entries(TRIGGER_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1.5">Action</label>
+              <select value={actionType} onChange={(e) => setActionType(e.target.value)}
+                className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-200 focus:border-indigo-500 focus:outline-none">
+                <option value="send_sms">Send SMS</option>
+                <option value="send_email">Send Email</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Template</label>
+            <select value={templateId} onChange={(e) => setTemplateId(e.target.value)}
+              className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-200 focus:border-indigo-500 focus:outline-none">
+              <option value="">-- Select a template --</option>
+              {templates.filter((t) => actionType === "send_sms" ? t.type === "sms" : t.type === "email").map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Delay (minutes, use negative for "before")</label>
+            <input type="number" value={delayMinutes} onChange={(e) => setDelayMinutes(e.target.value)}
+              placeholder="0 = immediate, -1440 = 24h before, 120 = 2h after"
+              className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-200 focus:border-indigo-500 focus:outline-none" />
+            <p className="mt-1 text-xs text-zinc-600">Negative = before event, positive = after event, 0 = immediate</p>
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 border-t border-zinc-800 px-6 py-4">
+          <button onClick={onClose} className="rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-400 hover:text-white">Cancel</button>
+          <button onClick={save} disabled={saving}
+            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {automation?.id ? "Save Changes" : "Add Automation"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AutomationsTab() {
+  const [automations, setAutomations] = useState<Automation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [editAutomation, setEditAutomation] = useState<Automation | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("automations")
+      .select("*, templates(name)")
+      .order("created_at");
+    setAutomations((data as Automation[]) || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const toggle = async (a: Automation) => {
+    const supabase = createClient();
+    await supabase.from("automations").update({ is_active: !a.is_active }).eq("id", a.id);
+    setAutomations((prev) => prev.map((x) => x.id === a.id ? { ...x, is_active: !x.is_active } : x));
+  };
+
+  const deleteAutomation = async (id: string) => {
+    if (!confirm("Delete this automation?")) return;
+    const supabase = createClient();
+    await supabase.from("automations").delete().eq("id", id);
+    load();
+  };
+
+  const DEFAULT_AUTOMATIONS = [
+    { name: "Appointment Confirmation SMS", trigger_type: "appointment_booked", action_type: "send_sms", delay_minutes: 0 },
+    { name: "Appointment Reminder (24h before)", trigger_type: "appointment_reminder", action_type: "send_sms", delay_minutes: -1440 },
+    { name: "Appointment Reminder (1h before)", trigger_type: "appointment_reminder", action_type: "send_sms", delay_minutes: -60 },
+    { name: "Post-Appointment Follow-up", trigger_type: "appointment_completed", action_type: "send_sms", delay_minutes: 120 },
+  ];
+
+  return (
+    <div className="max-w-3xl space-y-6">
+      <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 flex items-start gap-3">
+        <AlertCircle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
+        <div className="text-xs text-amber-300/80">
+          <strong className="text-amber-300">Automations</strong> send SMS and email messages automatically based on triggers.
+          Configure your Telnyx (SMS) and Resend (email) keys in the Integrations tab to enable sending.
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-white">Active Automations</h3>
+          <p className="text-xs text-zinc-500 mt-0.5">Toggle automations on/off or add custom ones</p>
+        </div>
+        <button onClick={() => setShowCreate(true)}
+          className="flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+          <Plus className="h-4 w-4" />Add Automation
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-12 text-zinc-500">
+          <Loader2 className="h-5 w-5 animate-spin" />
+        </div>
+      ) : automations.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-zinc-800 p-8 text-center">
+          <Zap className="h-8 w-8 text-zinc-700 mx-auto mb-3" />
+          <p className="text-sm font-medium text-zinc-400">No automations yet</p>
+          <p className="text-xs text-zinc-600 mt-1 mb-4">Add the default appointment automation suite to get started</p>
+          <button
+            onClick={async () => {
+              const supabase = createClient();
+              const { data: { user } } = await supabase.auth.getUser();
+              if (!user) return;
+              await supabase.from("automations").insert(
+                DEFAULT_AUTOMATIONS.map((a) => ({ ...a, is_active: true, user_id: user.id }))
+              );
+              load();
+            }}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+            Add Default Automations
+          </button>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-zinc-800 overflow-hidden">
+          {automations.map((a, i) => {
+            const ActionIcon = ACTION_ICONS[a.action_type] || Zap;
+            return (
+              <div key={a.id} className={cn("flex items-center gap-4 px-5 py-4", i > 0 && "border-t border-zinc-800")}>
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-800">
+                  <ActionIcon className="h-4 w-4 text-indigo-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-white truncate">{a.name}</p>
+                  <p className="text-xs text-zinc-500 mt-0.5">
+                    {TRIGGER_LABELS[a.trigger_type] || a.trigger_type} → {a.action_type === "send_sms" ? "SMS" : "Email"}
+                    {a.templates?.name ? ` (${a.templates.name})` : ""}
+                    <span className="ml-2 text-zinc-600">· {delayLabel(a.delay_minutes)}</span>
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button onClick={() => toggle(a)} className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-white">
+                    {a.is_active
+                      ? <ToggleRight className="h-6 w-6 text-indigo-500" />
+                      : <ToggleLeft className="h-6 w-6 text-zinc-600" />}
+                    <span className={a.is_active ? "text-indigo-400" : "text-zinc-600"}>{a.is_active ? "On" : "Off"}</span>
+                  </button>
+                  <button onClick={() => setEditAutomation(a)}
+                    className="rounded-lg border border-zinc-800 px-2.5 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-zinc-800">Edit</button>
+                  <button onClick={() => deleteAutomation(a.id)}
+                    className="rounded-lg border border-zinc-800 px-2.5 py-1.5 text-xs text-zinc-400 hover:text-red-400 hover:bg-red-950/20">Delete</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {(showCreate || editAutomation) && (
+        <AutomationModal
+          automation={editAutomation || undefined}
+          onClose={() => { setShowCreate(false); setEditAutomation(null); }}
+          onSaved={() => { setShowCreate(false); setEditAutomation(null); load(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+export default function SettingsPage() {
+  const [tab, setTab] = useState<Tab>("organization");
+  const [orgName, setOrgName] = useState("");
+  const [saved, setSaved] = useState(false);
+  const brand = useBrand();
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      supabase.from("profiles").select("organization_id, organizations(name)")
+        .eq("id", user.id).single()
+        .then(({ data }) => {
+          const org = (data as Record<string, unknown>)?.organizations as { name?: string } | null;
+          if (org?.name) setOrgName(org.name);
+        });
+    });
+  }, []);
+
+  const handleSave = () => {
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-white">Settings</h1>
+        <p className="text-zinc-400">Manage your organization and account settings</p>
+      </div>
+
+      {/* Tab nav */}
+      <div className="flex gap-1 border-b border-zinc-800">
+        {TABS.map((t) => {
+          const Icon = TAB_ICONS[t];
+          return (
+            <button key={t} onClick={() => setTab(t)}
+              className={cn("flex items-center gap-2 px-4 pb-3 text-sm font-medium transition-colors border-b-2 -mb-px",
+                tab === t ? "border-indigo-500 text-white" : "border-transparent text-zinc-500 hover:text-zinc-300")}>
+              <Icon className="h-4 w-4" />{TAB_LABELS[t]}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Organization */}
+      {tab === "organization" && (
+        <div className="space-y-4 max-w-2xl">
+          <Section title="Organization Details" description="Update your organization name and branding">
+            <InputField label="Organization Name" value={orgName} onChange={setOrgName} placeholder="Lead Friendly Agency" />
+            <InputField label="Website" value="" onChange={() => {}} placeholder="https://yourwebsite.com" />
+            <InputField label="Support Email" value="" onChange={() => {}} placeholder="support@yourcompany.com" type="email" />
+          </Section>
+          <Section title="Business Hours" description="Set when your team is available">
+            <div className="grid grid-cols-2 gap-4">
+              <InputField label="Opening Time" value="09:00" onChange={() => {}} type="time" />
+              <InputField label="Closing Time" value="17:00" onChange={() => {}} type="time" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="block text-sm font-medium text-zinc-300">Timezone</label>
+              <select className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-300 focus:border-indigo-500 focus:outline-none">
+                <option>America/New_York</option>
+                <option>America/Los_Angeles</option>
+                <option>America/Chicago</option>
+                <option>America/Denver</option>
+                <option>Europe/London</option>
+              </select>
+            </div>
+          </Section>
+          <button onClick={handleSave}
+            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+            <Save className="h-4 w-4" />
+            {saved ? "Saved!" : "Save Changes"}
+          </button>
+        </div>
+      )}
+
+      {/* Integrations */}
+      {tab === "integrations" && (
+        <div className="space-y-6 max-w-2xl">
+
+          {/* Voice & AI — native, no keys needed */}
+          <div>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">Voice & AI — Built In</h2>
+            <div className="space-y-3">
+              {[
+                { name: "Telnyx", desc: `Phone numbers, outbound calling & SMS — powered by ${brand.brandName}`, status: "Active" },
+                { name: "ElevenLabs", desc: "Human-quality AI voice synthesis — built into every AI Agent", status: "Active" },
+                { name: "Deepgram", desc: "Real-time speech-to-text transcription on every call", status: "Active" },
+              ].map((s) => (
+                <div key={s.name} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/50 px-5 py-4">
+                  <div>
+                    <p className="text-sm font-semibold text-white">{s.name}</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">{s.desc}</p>
+                  </div>
+                  <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-400">
+                    ✓ {s.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Calendar Integrations */}
+          <div>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">Calendar</h2>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/50 px-5 py-4">
+                <div>
+                  <p className="text-sm font-semibold text-white">Google Calendar</p>
+                  <p className="text-xs text-zinc-500 mt-0.5">Two-way sync — AI agents book directly into your Google Calendar</p>
+                </div>
+                <button className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">
+                  Connect
+                </button>
+              </div>
+              <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/50 px-5 py-4">
+                <div>
+                  <p className="text-sm font-semibold text-white">Outlook / Microsoft 365</p>
+                  <p className="text-xs text-zinc-500 mt-0.5">Sync appointments with your Microsoft calendar</p>
+                </div>
+                <button className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">
+                  Connect
+                </button>
+              </div>
+              <Section title="Cal.com" description="Paste your Cal.com API key to sync bookings">
+                <div className="grid grid-cols-2 gap-3">
+                  <InputField label="Cal.com API Key" value="" onChange={() => {}} type="password" placeholder="cal_live_..." />
+                  <InputField label="Event Type ID" value="" onChange={() => {}} placeholder="123456" />
+                </div>
+                <button className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+                  <Save className="h-4 w-4" />Save Cal.com
+                </button>
+              </Section>
+            </div>
+          </div>
+
+          {/* CRM & Webhooks */}
+          <div>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">CRM & Webhooks</h2>
+            <Section title="Webhook URL" description="Receive real-time call events and outcomes to your own endpoint">
+              <InputField label="Endpoint URL" value="" onChange={() => {}} placeholder="https://yourdomain.com/webhook" />
+              <button className="text-xs text-indigo-400 hover:text-indigo-300">Send test event →</button>
+            </Section>
+          </div>
+
+        </div>
+      )}
+
+      {/* Team */}
+      {tab === "team" && (
+        <div className="max-w-2xl">
+          <Section title="Team Members" description="Manage who has access to your organization">
+            <div className="space-y-3">
+              {[
+                { name: "Mandeep Rao", email: "mandeep@leadfriendly.com", role: "Owner" },
+              ].map((member) => (
+                <div key={member.email} className="flex items-center justify-between rounded-lg border border-zinc-800 p-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-600/20 text-xs font-semibold text-indigo-400">
+                      {member.name[0]}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-white">{member.name}</p>
+                      <p className="text-xs text-zinc-500">{member.email}</p>
+                    </div>
+                  </div>
+                  <span className="rounded-full border border-indigo-500/20 bg-indigo-500/10 px-2.5 py-0.5 text-xs font-medium text-indigo-400">
+                    {member.role}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <button className="flex items-center gap-2 rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-800">
+              <Users className="h-4 w-4" />Invite Team Member
+            </button>
+          </Section>
+        </div>
+      )}
+
+      {/* Notifications */}
+      {tab === "notifications" && (
+        <div className="max-w-2xl">
+          <Section title="Notification Preferences" description="Choose what you want to be notified about">
+            <div className="space-y-3">
+              {[
+                { label: "New inbound call", desc: "Get notified when a contact calls" },
+                { label: "Appointment booked", desc: "When an AI agent books an appointment" },
+                { label: "Call completed", desc: "Summary after each call" },
+                { label: "Campaign finished", desc: "When a campaign completes all contacts" },
+                { label: "Payment received", desc: "When an invoice is paid" },
+              ].map((n) => (
+                <div key={n.label} className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-zinc-300">{n.label}</p>
+                    <p className="text-xs text-zinc-600">{n.desc}</p>
+                  </div>
+                  <button className="relative h-5 w-9 rounded-full bg-indigo-600 transition-colors focus:outline-none">
+                    <span className="absolute right-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </Section>
+        </div>
+      )}
+
+      {/* Automations */}
+      {tab === "automations" && <AutomationsTab />}
+
+      {/* Security */}
+      {tab === "security" && (
+        <div className="max-w-2xl space-y-4">
+          <Section title="Change Password" description="Update your account password">
+            <InputField label="Current Password" value="" onChange={() => {}} type="password" />
+            <InputField label="New Password" value="" onChange={() => {}} type="password"
+              hint="Must be at least 8 characters" />
+            <InputField label="Confirm New Password" value="" onChange={() => {}} type="password" />
+            <button className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+              <Save className="h-4 w-4" />Update Password
+            </button>
+          </Section>
+          <Section title="Two-Factor Authentication" description="Add extra security to your account">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-zinc-300">Authenticator app</p>
+                <p className="text-xs text-zinc-600">Use an app like Google Authenticator</p>
+              </div>
+              <button className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800">Enable</button>
+            </div>
+          </Section>
+        </div>
+      )}
+    </div>
+  );
+}

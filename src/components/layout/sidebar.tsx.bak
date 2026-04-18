@@ -1,0 +1,152 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useState, useEffect } from "react";
+import { cn } from "@/lib/utils";
+import { useSidebarStore } from "@/store/sidebar";
+import {
+  Building2,
+  LayoutDashboard,
+  MessageSquare,
+  Calendar,
+  Users,
+  Target,
+  Phone,
+  Megaphone,
+  DollarSign,
+  Zap,
+  Bot,
+  FileText,
+  Palette,
+  Star,
+  BarChart3,
+  Settings,
+  ChevronLeft,
+  Sparkles,
+  Hash,
+} from "lucide-react";
+
+const navigation = [
+  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { name: "Conversations", href: "/conversations", icon: MessageSquare, badge: true },
+  { name: "Calendar", href: "/calendar", icon: Calendar },
+  { name: "Contacts", href: "/contacts", icon: Users },
+  { name: "Opportunities", href: "/opportunities", icon: Target },
+  { name: "Calls", href: "/calls", icon: Phone },
+  { name: "Campaigns", href: "/campaigns", icon: Megaphone },
+  { name: "Payments", href: "/payments", icon: DollarSign },
+  { name: "Automations", href: "/automations", icon: Zap },
+  { name: "AI Agents", href: "/ai-agents", icon: Bot },
+  { name: "Phone Numbers", href: "/phone-numbers", icon: Hash },
+  { name: "Sub-Accounts", href: "/sub-accounts", icon: Building2 },
+  { name: "Templates", href: "/templates", icon: FileText },
+  { name: "Branding", href: "/branding", icon: Palette },
+  { name: "Reputation", href: "/reputation", icon: Star },
+  { name: "Reporting", href: "/reporting", icon: BarChart3 },
+  { name: "Settings", href: "/settings", icon: Settings },
+];
+
+function AIMinutesTracker() {
+  const [used, setUsed] = useState(0);
+  const [limit, setLimit] = useState(500);
+
+  useEffect(() => {
+    fetch("/api/ai-minutes")
+      .then(r => r.json())
+      .then((d: { used?: number; limit?: number }) => {
+        setUsed(d.used || 0);
+        setLimit(d.limit || 500);
+      })
+      .catch(() => {});
+  }, []);
+
+  const pct = limit > 0 ? Math.min((used / limit) * 100, 100) : 0;
+  const color = pct >= 90 ? "bg-red-500" : pct >= 70 ? "bg-amber-500" : "bg-indigo-600";
+
+  return (
+    <div className="rounded-lg bg-zinc-900 p-3">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-zinc-400">AI Minutes</span>
+        <span className="text-indigo-400">{used} / {limit}</span>
+      </div>
+      <div className="mt-2 h-1.5 rounded-full bg-zinc-800">
+        <div className={`h-1.5 rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+export function Sidebar() {
+  const pathname = usePathname();
+  const { isCollapsed, toggle } = useSidebarStore();
+
+  return (
+    <aside
+      className={cn(
+        "fixed inset-y-0 left-0 z-50 flex flex-col border-r border-zinc-800 bg-zinc-950 transition-all duration-300",
+        isCollapsed ? "w-16" : "w-64"
+      )}
+    >
+      {/* Logo */}
+      <div className="flex h-16 items-center justify-between border-b border-zinc-800 px-4">
+        {!isCollapsed && (
+          <Link href="/dashboard" className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600">
+              <Sparkles className="h-4 w-4 text-white" />
+            </div>
+            <span className="text-lg font-bold text-white">Lead Friendly</span>
+          </Link>
+        )}
+        {isCollapsed && (
+          <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600">
+            <Sparkles className="h-4 w-4 text-white" />
+          </div>
+        )}
+        <button
+          onClick={toggle}
+          className={cn(
+            "rounded-md p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white",
+            isCollapsed && "mx-auto mt-2"
+          )}
+        >
+          <ChevronLeft
+            className={cn("h-4 w-4 transition-transform", isCollapsed && "rotate-180")}
+          />
+        </button>
+      </div>
+
+      {/* Navigation */}
+      <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-4">
+        {navigation.map((item) => {
+          const isActive =
+            pathname === item.href || pathname?.startsWith(item.href + "/");
+          return (
+            <Link
+              key={item.name}
+              href={item.href}
+              className={cn(
+                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                isActive
+                  ? "bg-indigo-600/10 text-indigo-400"
+                  : "text-zinc-400 hover:bg-zinc-800/50 hover:text-white",
+                isCollapsed && "justify-center px-2"
+              )}
+              title={isCollapsed ? item.name : undefined}
+            >
+              <item.icon className="h-5 w-5 shrink-0" />
+              {!isCollapsed && <span>{item.name}</span>}
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* Bottom Section */}
+      {!isCollapsed && (
+        <div className="border-t border-zinc-800 p-4">
+          <AIMinutesTracker />
+        </div>
+      )}
+    </aside>
+  );
+}

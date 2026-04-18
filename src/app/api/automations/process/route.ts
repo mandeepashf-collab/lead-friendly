@@ -1,0 +1,296 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+/**
+ * POST /api/automations/process
+ * Cron-compatible endpoint: processes pending automation triggers.
+ * Call this from a Vercel cron job or external scheduler every minute.
+ *
+ * Authorization: Pass CRON_SECRET in the Authorization header
+ * to prevent unauthorized triggering.
+ */
+export async function POST(req: NextRequest) {
+  // Parse optional body (campaign_launch path uses it; cron path doesn't)
+  let body: { type?: string; campaign_id?: string } = {};
+  try { body = await req.json(); } catch { /* no body — cron call */ }
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  // ── campaign_launch: called from the app when a user launches a campaign ──
+  if (body.type === 'campaign_launch') {
+    const { campaign_id } = body;
+    if (!campaign_id) {
+      return NextResponse.json({ error: 'campaign_id required' }, { status: 400 });
+    }
+
+    const { data: campaign } = await supabase
+      .from('campaigns')
+      .select('*')
+      .eq('id', campaign_id)
+      .single();
+
+    if (!campaign) {
+      return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
+    }
+
+    // Pick the org's first active phone number to dial from — much better
+    // than hardcoding TELNYX_PHONE_NUMBER (which only works for one org).
+    const { data: fromRow } = await supabase
+      .from('phone_numbers')
+      .select('number')
+      .eq('organization_id', campaign.organization_id)
+      .eq('status', 'active')
+      .limit(1)
+      .maybeSingle();
+    const fromNumber = (fromRow as { number?: string } | null)?.number
+      || process.env.TELNYX_PHONE_NUMBER;
+    if (!fromNumber) {
+      return NextResponse.json(
+        { error: 'No active phone number found for this organization' },
+        { status: 400 }
+      );
+    }
+
+    // Build the set of contact IDs this campaign has already called so we
+    // don't double-dial. A contact counts as "called" if a call record
+    // exists with (campaign_id = X, contact_id = contact).
+    const { data: alreadyCalled } = await supabase
+      .from('calls')
+      .select('contact_id')
+      .eq('campaign_id', campaign_id)
+      .not('contact_id', 'is', null);
+    const calledSet = new Set<string>();
+    (alreadyCalled || []).forEach((c: { contact_id: string | null }) => {
+      if (c.contact_id) calledSet.add(c.contact_id);
+    });
+
+    // Fetch candidates scoped to this org, with a phone, not do-not-call,
+    // and not yet called by this campaign. Fetch more than the daily limit
+    // because we'll filter out the already-called ones client-side.
+    const dailyLimit = campaign.daily_call_limit || 10;
+    const { data: contacts } = await supabase
+      .from('contacts')
+      .select('id, phone, status')
+      .eq('organization_id', campaign.organization_id)
+      .not('phone', 'is', null)
+      .neq('status', 'do_not_contact')
+      .limit(dailyLimit * 3);
+
+    const toCall = (contacts || [])
+      .filter((c) => c.phone && !calledSet.has(c.id))
+      .slice(0, dailyLimit);
+
+    if (toCall.length === 0) {
+      return NextResponse.json({
+        ok: true,
+        message: 'No uncalled contacts remain (all contacts already dialed by this campaign or none available)',
+        triggered: 0,
+      });
+    }
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    let triggered = 0;
+    let failed = 0;
+    for (const contact of toCall) {
+      if (!contact.phone) continue;
+      try {
+        const res = await fetch(`${appUrl}/api/calls/trigger`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            // Pass the service-role key so /api/calls/trigger can skip user
+            // auth (campaign runs from a webhook/cron, not a browser session).
+            'x-campaign-launch-key': process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+          },
+          body: JSON.stringify({
+            contactId: contact.id,
+            contactPhone: contact.phone,
+            fromNumber,
+            agentId: campaign.ai_agent_id,
+            campaignId: campaign_id,
+            organizationId: campaign.organization_id,
+          }),
+        });
+        if (res.ok) triggered++;
+        else failed++;
+        // 1-second inter-call spacing so we don't tail-slam Telnyx's rate limits
+        await new Promise((r) => setTimeout(r, 1000));
+      } catch (err) {
+        console.error('Failed to trigger call for contact', contact.id, err);
+        failed++;
+      }
+    }
+
+    // Bump the campaign's total_contacted by the new triggers (not set-to)
+    await supabase.from('campaigns')
+      .update({ total_contacted: (campaign.total_contacted || 0) + triggered })
+      .eq('id', campaign_id);
+
+    return NextResponse.json({ ok: true, triggered, failed, remaining: toCall.length });
+  }
+
+  // ── cron path: original automation processing ─────────────────────────
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret) {
+    const authHeader = req.headers.get("authorization");
+    if (authHeader !== `Bearer ${cronSecret}`) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
+
+  const now = new Date();
+  const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const in1h = new Date(now.getTime() + 60 * 60 * 1000);
+  const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+  const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+
+  const processed: string[] = [];
+
+  // Fetch active automations
+  const { data: automations } = await supabase
+    .from("automations")
+    .select("*, templates(*)")
+    .eq("is_active", true);
+
+  if (!automations || automations.length === 0) {
+    return NextResponse.json({ processed: 0, message: "No active automations" });
+  }
+
+  // Helper to build a date-range filter on the split (appointment_date, start_time) schema
+  // used by the frontend. Filters on date first (cheap) then narrows by time in memory.
+  const windowInMemory = (
+    appts: Array<{ appointment_date?: string; start_time?: string; end_time?: string }>,
+    from: Date,
+    to: Date,
+    field: "start" | "end"
+  ) => {
+    return appts.filter((a) => {
+      const t = field === "start" ? a.start_time : a.end_time;
+      if (!a.appointment_date || !t) return false;
+      // Combine date + time into a single Date in the server's timezone.
+      // Appointments are stored in the org's local time; for reminder math
+      // we treat them as ISO local and compare against `now`.
+      const ts = new Date(`${a.appointment_date}T${t}`);
+      return ts >= from && ts <= to;
+    });
+  };
+
+  for (const automation of automations) {
+    try {
+      if (automation.trigger_type === "appointment_reminder" && automation.delay_minutes === -1440) {
+        // 24h before appointments
+        const fromDate = now.toISOString().slice(0, 10);
+        const toDate = in24h.toISOString().slice(0, 10);
+        const { data: appointments } = await supabase
+          .from("appointments")
+          .select("id, contact_id, appointment_date, start_time, end_time, contacts(phone, first_name)")
+          .gte("appointment_date", fromDate)
+          .lte("appointment_date", toDate)
+          .in("status", ["confirmed", "scheduled"]);
+
+        for (const appt of windowInMemory(appointments || [], now, in24h, "start")) {
+          await sendAutomation(supabase, automation, appt, "appointment_reminder_24h", processed);
+        }
+      }
+
+      if (automation.trigger_type === "appointment_reminder" && automation.delay_minutes === -60) {
+        // 1h before appointments
+        const today = now.toISOString().slice(0, 10);
+        const { data: appointments } = await supabase
+          .from("appointments")
+          .select("id, contact_id, appointment_date, start_time, end_time, contacts(phone, first_name)")
+          .eq("appointment_date", today)
+          .in("status", ["confirmed", "scheduled"]);
+
+        for (const appt of windowInMemory(appointments || [], now, in1h, "start")) {
+          await sendAutomation(supabase, automation, appt, "appointment_reminder_1h", processed);
+        }
+      }
+
+      if (automation.trigger_type === "appointment_completed" && automation.delay_minutes === 120) {
+        // 2 hours after completed appointments
+        const today = now.toISOString().slice(0, 10);
+        const yday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const { data: appointments } = await supabase
+          .from("appointments")
+          .select("id, contact_id, appointment_date, start_time, end_time, contacts(phone, first_name)")
+          .in("appointment_date", [today, yday])
+          .eq("status", "completed");
+
+        for (const appt of windowInMemory(appointments || [], twoHoursAgo, oneHourAgo, "end")) {
+          await sendAutomation(supabase, automation, appt, "appointment_followup", processed);
+        }
+      }
+    } catch (err) {
+      console.error(`Automation ${automation.id} error:`, err);
+    }
+  }
+
+  return NextResponse.json({ processed: processed.length, items: processed });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function sendAutomation(
+  supabase: any,
+  automation: any,
+  appointment: any,
+  refType: string,
+  processed: string[]
+) {
+  const contact_id = appointment.contact_id;
+  const appt_id = appointment.id;
+
+  if (!contact_id) return;
+
+  // Check if already sent
+  const { data: existing } = await supabase
+    .from("automation_log")
+    .select("id")
+    .eq("automation_id", automation.id)
+    .eq("contact_id", contact_id)
+    .eq("reference_id", appt_id)
+    .limit(1);
+
+  if (existing && existing.length > 0) return; // Already sent
+
+  const contact = appointment.contacts;
+  const phone = contact?.phone;
+  const firstName = contact?.first_name || "there";
+
+  if (!phone) return;
+
+  // Build message from template. Combine appointment_date + start_time so
+  // the formatting helpers work consistently whether we're looking at a row
+  // with split date/time fields (new schema) or a legacy starts_at row.
+  const apptDateStr = appointment.appointment_date || appointment.starts_at;
+  const apptTimeStr = appointment.start_time || "";
+  const combined = apptTimeStr ? new Date(`${apptDateStr}T${apptTimeStr}`) : new Date(apptDateStr);
+  let message = automation.templates?.body || "";
+  message = message
+    .replace(/{{first_name}}/g, firstName)
+    .replace(/{{appointment_date}}/g, combined.toLocaleDateString())
+    .replace(/{{appointment_time}}/g, combined.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+
+  if (!message) return;
+
+  // Send SMS via internal route
+  const smsUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/sms/send`;
+  await fetch(smsUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ to: phone, message, contact_id, template_id: automation.template_id }),
+  });
+
+  // Log the automation
+  await supabase.from("automation_log").insert({
+    automation_id: automation.id,
+    contact_id,
+    reference_id: appt_id,
+    status: "sent",
+  });
+
+  processed.push(`${refType}:${contact_id}:${appt_id}`);
+}

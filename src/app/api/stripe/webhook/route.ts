@@ -1,0 +1,194 @@
+import { NextRequest, NextResponse } from "next/server";
+import Stripe from "stripe";
+import { createClient as createServiceClient } from "@supabase/supabase-js";
+
+/**
+ * POST /api/stripe/webhook
+ *
+ * Stripe webhook endpoint. Updates organization subscription status in response
+ * to Stripe lifecycle events. Requires STRIPE_WEBHOOK_SECRET to verify signatures.
+ *
+ * Events handled:
+ *   - checkout.session.completed           → new sub activated
+ *   - customer.subscription.created        → sub created (redundant with checkout)
+ *   - customer.subscription.updated        → plan change / payment status
+ *   - customer.subscription.deleted        → cancellation at period end
+ *   - invoice.payment_succeeded            → payment success (keep active)
+ *   - invoice.payment_failed               → payment failure (mark past_due)
+ *
+ * The org row needs these columns:
+ *   stripe_customer_id         text
+ *   stripe_subscription_id     text
+ *   subscription_status        text  (active | trialing | past_due | canceled | null)
+ *   subscription_plan_id       text  (Stripe Price ID)
+ *   subscription_current_period_end timestamptz
+ *
+ * Vercel delivers the raw body via req.text(); we hand it straight to Stripe.
+ */
+
+// Next.js 16 App Router: force runtime to nodejs so Buffer etc. are available.
+export const runtime = "nodejs";
+
+export async function POST(req: NextRequest) {
+  if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_WEBHOOK_SECRET) {
+    return NextResponse.json(
+      { error: "Stripe not configured" },
+      { status: 500 }
+    );
+  }
+
+  const sig = req.headers.get("stripe-signature");
+  if (!sig) {
+    return NextResponse.json({ error: "Missing signature" }, { status: 400 });
+  }
+
+  const rawBody = await req.text();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2026-03-25.dahlia" as any });
+
+  let event: Stripe.Event;
+  try {
+    event = stripe.webhooks.constructEvent(
+      rawBody,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
+  } catch (err) {
+    console.error("[STRIPE WEBHOOK] signature verification failed:", err);
+    return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
+  }
+
+  console.log("[STRIPE WEBHOOK]", event.type, event.id);
+
+  const supabase = createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false, autoRefreshToken: false } }
+  );
+
+  // Helper: find the org for a given customer ID. Only returns null if the
+  // customer isn't linked to any org yet (e.g. test event from an unrelated
+  // Stripe account).
+  const orgIdForCustomer = async (customerId: string) => {
+    const { data } = await supabase
+      .from("organizations")
+      .select("id")
+      .eq("stripe_customer_id", customerId)
+      .maybeSingle();
+    return data?.id as string | undefined;
+  };
+
+  // Helper: in newer Stripe SDKs `current_period_end` lives on subscription
+  // items, not on the subscription itself. Pull the earliest item end as the
+  // subscription's effective end.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const subPeriodEnd = (sub: any): string | null => {
+    const items = sub?.items?.data || [];
+    if (items.length === 0) return null;
+    const ends: number[] = items
+      .map((it: { current_period_end?: number }) => it.current_period_end)
+      .filter((v: unknown): v is number => typeof v === "number");
+    if (ends.length === 0) return null;
+    return new Date(Math.min(...ends) * 1000).toISOString();
+  };
+
+  try {
+    switch (event.type) {
+      case "checkout.session.completed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const orgId = (session.metadata?.organization_id as string | undefined)
+          || (session.customer ? await orgIdForCustomer(session.customer as string) : undefined);
+        if (!orgId) break;
+
+        // Pull the subscription for plan + period info
+        let subId: string | null = null;
+        let priceId: string | null = null;
+        let periodEnd: string | null = null;
+        let status: string = "active";
+        if (session.subscription) {
+          const sub = await stripe.subscriptions.retrieve(session.subscription as string);
+          subId = sub.id;
+          priceId = sub.items.data[0]?.price.id ?? null;
+          periodEnd = subPeriodEnd(sub);
+          status = sub.status;
+        }
+
+        await supabase
+          .from("organizations")
+          .update({
+            stripe_customer_id: session.customer as string,
+            stripe_subscription_id: subId,
+            subscription_status: status,
+            subscription_plan_id: priceId,
+            subscription_current_period_end: periodEnd,
+          })
+          .eq("id", orgId);
+        break;
+      }
+
+      case "customer.subscription.created":
+      case "customer.subscription.updated": {
+        const sub = event.data.object as Stripe.Subscription;
+        const orgId = (sub.metadata?.organization_id as string | undefined)
+          || await orgIdForCustomer(sub.customer as string);
+        if (!orgId) break;
+
+        await supabase
+          .from("organizations")
+          .update({
+            stripe_subscription_id: sub.id,
+            subscription_status: sub.status,
+            subscription_plan_id: sub.items.data[0]?.price.id ?? null,
+            subscription_current_period_end: subPeriodEnd(sub),
+          })
+          .eq("id", orgId);
+        break;
+      }
+
+      case "customer.subscription.deleted": {
+        const sub = event.data.object as Stripe.Subscription;
+        const orgId = await orgIdForCustomer(sub.customer as string);
+        if (!orgId) break;
+        await supabase
+          .from("organizations")
+          .update({ subscription_status: "canceled" })
+          .eq("id", orgId);
+        break;
+      }
+
+      case "invoice.payment_failed": {
+        const invoice = event.data.object as Stripe.Invoice;
+        const orgId = await orgIdForCustomer(invoice.customer as string);
+        if (!orgId) break;
+        await supabase
+          .from("organizations")
+          .update({ subscription_status: "past_due" })
+          .eq("id", orgId);
+        break;
+      }
+
+      case "invoice.payment_succeeded": {
+        const invoice = event.data.object as Stripe.Invoice;
+        const orgId = await orgIdForCustomer(invoice.customer as string);
+        if (!orgId) break;
+        // If they were past_due, flip back to active
+        await supabase
+          .from("organizations")
+          .update({ subscription_status: "active" })
+          .eq("id", orgId);
+        break;
+      }
+
+      default:
+        // Ignore everything else — Stripe sends ~100 event types we don't care about
+        break;
+    }
+  } catch (err) {
+    console.error("[STRIPE WEBHOOK] handler error:", err);
+    // Return 500 so Stripe retries
+    return NextResponse.json({ error: "Handler error" }, { status: 500 });
+  }
+
+  return NextResponse.json({ received: true });
+}
