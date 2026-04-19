@@ -90,9 +90,32 @@ export async function POST(request: NextRequest) {
 
   const log = callLogger("human-" + Date.now());
 
-  // Normalize numbers
-  const toNumber = contactPhone.startsWith("+") ? contactPhone : `+1${contactPhone.replace(/\D/g, "")}`;
-  const repNum = repPhoneNumber.startsWith("+") ? repPhoneNumber : `+1${repPhoneNumber.replace(/\D/g, "")}`;
+  // Normalize numbers to E.164. Strip anything non-digit except a leading +
+  // so "(253) 402-6951" and "+1 253-402-6951" both land on "+12534026951".
+  const normalizeE164 = (raw: string): string => {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith("+")) {
+      return `+${trimmed.slice(1).replace(/\D/g, "")}`;
+    }
+    const digits = trimmed.replace(/\D/g, "");
+    return digits.length === 11 && digits.startsWith("1") ? `+${digits}` : `+1${digits}`;
+  };
+
+  const toNumber = normalizeE164(contactPhone);
+  const repNum = normalizeE164(repPhoneNumber);
+
+  // Self-call guard — rep phone === contact phone makes for confusing audio
+  // (caller calls themselves then we try to bridge the same line). Block it
+  // early with a clear error so the UI can surface it.
+  if (toNumber === repNum) {
+    return NextResponse.json(
+      {
+        error: "SELF_CALL_BLOCKED",
+        message: "Can't call yourself. The rep phone and contact phone are the same.",
+      },
+      { status: 400 },
+    );
+  }
 
   // Number pool (pick a from number if not provided)
   let from: string;

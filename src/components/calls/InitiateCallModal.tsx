@@ -127,8 +127,20 @@ export default function InitiateCallModal({
           agentId: selectedAgentId,
         }),
       });
-      const data = await res.json() as { callRecordId?: string; error?: string };
-      if (!res.ok) throw new Error(data.error || 'Call failed');
+      const data = await res.json() as {
+        callRecordId?: string;
+        error?: string;
+        message?: string;
+        code?: string;
+      };
+      if (!res.ok) {
+        // SELF_CALL_BLOCKED: stay on the modal so user can adjust settings
+        if (data.error === 'SELF_CALL_BLOCKED') {
+          setError(data.message || "Can't call yourself. Pick a different rep phone in Settings, or test with a different contact.");
+          return;
+        }
+        throw new Error(data.message || data.error || 'Call failed');
+      }
       onCallStarted(data.callRecordId!);
       onClose();
     } catch (e: unknown) {
