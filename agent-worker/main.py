@@ -205,11 +205,19 @@ async def entrypoint(ctx: JobContext):
     """
 
     # ── Parse room metadata ─────────────────────────────────────
-    raw_metadata = ctx.room.metadata or "{}"
+    # Prefer dispatch metadata (ctx.job.metadata) since explicit/token-embedded
+    # dispatch paths populate it reliably; room.metadata only fills in when
+    # createRoom() ran before dispatch.
+    raw_metadata = ctx.job.metadata or ctx.room.metadata or "{}"
+    metadata_source = (
+        "ctx.job.metadata" if ctx.job.metadata
+        else ("ctx.room.metadata" if ctx.room.metadata else "empty")
+    )
+    logger.info("agent_config metadata source=%s preview=%s", metadata_source, raw_metadata[:200])
     try:
         metadata = json.loads(raw_metadata)
     except json.JSONDecodeError:
-        logger.error("Failed to parse room metadata: %s", raw_metadata[:200])
+        logger.error("Failed to parse metadata: %s", raw_metadata[:200])
         metadata = {}
 
     agent_config = metadata.get("agentConfig", {})
