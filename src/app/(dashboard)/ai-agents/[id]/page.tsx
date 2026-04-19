@@ -782,36 +782,38 @@ export default function EditAgentPage() {
 
       {error && <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-2.5 text-sm text-red-400">{error}</div>}
 
-      {/* ── Tab Navigation ──────────────────────────────────────────── */}
-      <div className="flex items-center gap-1 border-b border-zinc-800">
-        {/* Wizard tabs */}
-        {WIZARD_TABS.map(t => {
-          const Icon = t.icon;
-          const active = !isExtraTab && wizardTab === t.id;
-          return (
-            <button key={t.id} onClick={() => { setWizardTab(t.id); setExtraTab(null); }}
-              className={cn("flex items-center gap-2 px-4 pb-3 text-sm font-medium transition-colors border-b-2 -mb-px",
-                active ? "border-indigo-500 text-white" : "border-transparent text-zinc-500 hover:text-zinc-300")}>
-              <span className={cn("w-5 h-5 rounded-full text-xs flex items-center justify-center font-bold",
-                active ? "bg-indigo-600 text-white" : "bg-zinc-800 text-zinc-500")}>
-                {t.num}
-              </span>
-              {t.label}
-            </button>
-          );
-        })}
-        <div className="w-px h-5 bg-zinc-800 mx-2" />
-        {/* Extra tabs */}
-        {EXTRA_TABS.map(t => {
-          const Icon = t.icon;
-          return (
-            <button key={t.id} onClick={() => setExtraTab(t.id)}
-              className={cn("flex items-center gap-2 px-4 pb-3 text-sm font-medium transition-colors border-b-2 -mb-px",
-                extraTab === t.id ? "border-indigo-500 text-white" : "border-transparent text-zinc-500 hover:text-zinc-300")}>
-              <Icon className="h-3.5 w-3.5" />{t.label}
-            </button>
-          );
-        })}
+      {/* ── Tab Navigation (horizontal scroll on narrow viewports) ─── */}
+      <div className="border-b border-zinc-800 -mx-2 px-2 overflow-x-auto scrollbar-none">
+        <div className="flex items-center gap-1 min-w-max">
+          {/* Wizard tabs */}
+          {WIZARD_TABS.map(t => {
+            const Icon = t.icon;
+            const active = !isExtraTab && wizardTab === t.id;
+            return (
+              <button key={t.id} onClick={() => { setWizardTab(t.id); setExtraTab(null); }}
+                className={cn("flex items-center gap-2 px-4 pb-3 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap flex-shrink-0",
+                  active ? "border-indigo-500 text-white" : "border-transparent text-zinc-500 hover:text-zinc-300")}>
+                <span className={cn("w-5 h-5 rounded-full text-xs flex items-center justify-center font-bold",
+                  active ? "bg-indigo-600 text-white" : "bg-zinc-800 text-zinc-500")}>
+                  {t.num}
+                </span>
+                {t.label}
+              </button>
+            );
+          })}
+          <div className="w-px h-5 bg-zinc-800 mx-2 flex-shrink-0" />
+          {/* Extra tabs */}
+          {EXTRA_TABS.map(t => {
+            const Icon = t.icon;
+            return (
+              <button key={t.id} onClick={() => setExtraTab(t.id)}
+                className={cn("flex items-center gap-2 px-4 pb-3 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap flex-shrink-0",
+                  extraTab === t.id ? "border-indigo-500 text-white" : "border-transparent text-zinc-500 hover:text-zinc-300")}>
+                <Icon className="h-3.5 w-3.5" />{t.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════ */}

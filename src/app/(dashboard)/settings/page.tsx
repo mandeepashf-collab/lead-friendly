@@ -368,24 +368,26 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 min-w-0">
       <div>
         <h1 className="text-2xl font-bold text-white">Settings</h1>
         <p className="text-zinc-400">Manage your organization and account settings</p>
       </div>
 
-      {/* Tab nav */}
-      <div className="flex gap-1 border-b border-zinc-800">
-        {TABS.map((t) => {
-          const Icon = TAB_ICONS[t];
-          return (
-            <button key={t} onClick={() => setTab(t)}
-              className={cn("flex items-center gap-2 px-4 pb-3 text-sm font-medium transition-colors border-b-2 -mb-px",
-                tab === t ? "border-indigo-500 text-white" : "border-transparent text-zinc-500 hover:text-zinc-300")}>
-              <Icon className="h-4 w-4" />{TAB_LABELS[t]}
-            </button>
-          );
-        })}
+      {/* Tab nav — horizontal scroll on narrow viewports so "Security" is never cut off */}
+      <div className="border-b border-zinc-800 -mx-2 px-2 overflow-x-auto scrollbar-none">
+        <div className="flex gap-1 min-w-max">
+          {TABS.map((t) => {
+            const Icon = TAB_ICONS[t];
+            return (
+              <button key={t} onClick={() => setTab(t)}
+                className={cn("flex items-center gap-2 px-4 pb-3 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap flex-shrink-0",
+                  tab === t ? "border-indigo-500 text-white" : "border-transparent text-zinc-500 hover:text-zinc-300")}>
+                <Icon className="h-4 w-4" />{TAB_LABELS[t]}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Organization */}

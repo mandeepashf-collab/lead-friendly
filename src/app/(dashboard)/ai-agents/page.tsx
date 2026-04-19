@@ -13,19 +13,19 @@ function AgentCard({ agent, onDelete }: { agent: AIAgent; onDelete: () => void }
   const voiceName = getVoiceName(agent.voice_id);
   const { stats: agentStats } = useAgentCallStats(agent.id);
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 space-y-4 hover:border-zinc-700 transition-colors">
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 space-y-4 hover:border-zinc-700 transition-colors min-w-0 overflow-hidden">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
             agent.status === "active" ? "bg-indigo-600/20" : "bg-zinc-800")}>
             <Bot className={cn("h-5 w-5", agent.status === "active" ? "text-indigo-400" : "text-zinc-600")} />
           </div>
-          <div>
-            <h3 className="font-semibold text-white text-sm">{agent.name}</h3>
+          <div className="min-w-0 flex-1">
+            <h3 className="font-semibold text-white text-sm truncate">{agent.name}</h3>
             <p className="text-xs text-zinc-500 mt-0.5 capitalize">{agent.type || "Outbound"}</p>
           </div>
         </div>
-        <span className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium border",
+        <span className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium border flex-shrink-0",
           agent.status === "active"
             ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
             : "text-zinc-500 bg-zinc-500/10 border-zinc-500/20")}>
@@ -33,13 +33,13 @@ function AgentCard({ agent, onDelete }: { agent: AIAgent; onDelete: () => void }
           {agent.status === "active" ? "Active" : "Inactive"}
         </span>
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div className="rounded-lg bg-zinc-950/50 p-2.5 text-center">
-          <p className="text-lg font-bold text-white">{agentStats.total_calls.toLocaleString()}</p>
+      <div className="grid grid-cols-2 gap-2 min-w-0">
+        <div className="rounded-lg bg-zinc-950/50 p-2.5 text-center min-w-0">
+          <p className="text-lg font-bold text-white truncate">{agentStats.total_calls.toLocaleString()}</p>
           <p className="text-xs text-zinc-600">Total calls</p>
         </div>
-        <div className="rounded-lg bg-zinc-950/50 p-2.5 text-center">
-          <p className="text-lg font-bold text-white">{voiceName}</p>
+        <div className="rounded-lg bg-zinc-950/50 p-2.5 text-center min-w-0">
+          <p className="text-lg font-bold text-white truncate" title={voiceName}>{voiceName}</p>
           <p className="text-xs text-zinc-600">Voice</p>
         </div>
       </div>
@@ -75,13 +75,13 @@ export default function AIAgentsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
+    <div className="space-y-6 min-w-0">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-white">AI Agents</h1>
           <p className="text-zinc-400">Configure and train your AI voice agents</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Link href="/ai-agents/build" prefetch={true}
             className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
             <Sparkles className="h-4 w-4" />Create agent
@@ -93,7 +93,7 @@ export default function AIAgentsPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
           { label: "Total Agents", value: agents.length, icon: Bot, color: "text-indigo-400" },
           { label: "Active Agents", value: activeCount, icon: Zap, color: "text-emerald-400" },

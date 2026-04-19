@@ -24,3 +24,15 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Hide scrollbars on horizontal tab strips while keeping scroll working.
+   Tailwind v4 doesn't ship a scrollbar-hide utility, so we define one here.
+   Used by settings/agent detail tab strips to avoid the "Security" tab
+   being cut off on narrow viewports (P4 overflow fixes, Apr 18 2026). */
+.scrollbar-none {
+  scrollbar-width: none;          /* Firefox */
+  -ms-overflow-style: none;       /* IE / old Edge */
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;                  /* Chrome / Safari */
+}
