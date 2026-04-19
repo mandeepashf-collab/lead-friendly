@@ -243,7 +243,34 @@ function ConversationsTab() {
 // ─────────────────────────────────────────────────────────────────
 // Call Logs Tab
 // ─────────────────────────────────────────────────────────────────
-type CallWithContact = Call & { contacts?: { first_name: string | null; last_name: string | null } };
+type CallWithContact = Call & {
+  contacts?: { first_name: string | null; last_name: string | null } | null;
+  ai_agents?: { name: string | null } | null;
+};
+
+/**
+ * Build a display label for a call row. Handles WebRTC test calls and
+ * callback-bridge calls that have NULL contact_id but DO have other context.
+ */
+function callDisplayName(call: CallWithContact): string {
+  if (call.contacts) {
+    const n = [call.contacts.first_name, call.contacts.last_name].filter(Boolean).join(" ");
+    if (n) return n;
+  }
+  const c = call as unknown as {
+    call_type?: string;
+    call_mode?: string;
+    to_number?: string;
+    from_number?: string;
+  };
+  if (c.call_type === "webrtc") {
+    return call.ai_agents?.name ? `WebRTC Test — ${call.ai_agents.name}` : "WebRTC Test";
+  }
+  if (c.call_mode === "callback_bridge") {
+    return c.to_number || c.from_number || "Bridged call";
+  }
+  return c.to_number || c.from_number || "Unknown";
+}
 
 function formatDuration(s: number) {
   if (!s) return "0:00";
@@ -357,9 +384,7 @@ function CallLogsTab() {
                     </div>
                   </td></tr>
                 ) : (calls as CallWithContact[]).map((call) => {
-                  const name = call.contacts
-                    ? [call.contacts.first_name, call.contacts.last_name].filter(Boolean).join(" ") || "Unknown"
-                    : "Unknown";
+                  const name = callDisplayName(call);
                   const isSelected = selectedCall?.id === call.id;
                   return (
                     <tr key={call.id} onClick={() => setSelectedCall(isSelected ? null : call)}
@@ -392,7 +417,10 @@ function CallLogsTab() {
         </div>
         {selectedCall && (
           <div className="w-96 shrink-0">
-            <CallDetail call={selectedCall} onClose={() => setSelectedCall(null)} />
+            <CallDetail
+              call={{ ...selectedCall, contacts: selectedCall.contacts ?? undefined }}
+              onClose={() => setSelectedCall(null)}
+            />
           </div>
         )}
       </div>

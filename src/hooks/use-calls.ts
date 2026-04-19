@@ -33,38 +33,30 @@ export function useCalls(options: UseCallsOptions = {}) {
     setError(null);
     const supabase = createClient();
 
-    // Prefer calls_enriched view (reverse-looks up contact from phone for
-    // the "Unknown" rows). Fall back to the raw calls table if the view
-    // doesn't exist yet (migration 011 not applied).
-    async function runOn(source: "calls_enriched" | "calls") {
-      // calls_enriched has `resolved_contact_id`; join on that when available.
-      const contactJoin =
-        source === "calls_enriched"
-          ? "contacts:resolved_contact_id(first_name, last_name)"
-          : "contacts:contact_id(first_name, last_name)";
+    // LEFT JOIN on contacts (and ai_agents) so rows with NULL contact_id —
+    // like WebRTC test calls — still appear. The `!left` hint forces the
+    // left join; without it, the earlier `contacts:resolved_contact_id(...)`
+    // syntax was malformed and dropped all rows.
+    let q = supabase
+      .from("calls")
+      .select(
+        "*, contacts!left(first_name, last_name), ai_agents!left(name)",
+        { count: "exact" },
+      )
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
 
-      let q = supabase
-        .from(source)
-        .select(`*, ${contactJoin}`, { count: "exact" })
-        .order("created_at", { ascending: false })
-        .range(offset, offset + limit - 1);
-
-      if (direction && direction !== "all") q = q.eq("direction", direction);
-      if (startDate) q = q.gte("created_at", startDate);
-      if (endDate) q = q.lte("created_at", endDate);
-      if (search) {
-        q = q.or(
-          `contacts.first_name.ilike.%${search}%,contacts.last_name.ilike.%${search}%`,
-        );
-      }
-      return q;
+    if (direction && direction !== "all") q = q.eq("direction", direction);
+    if (startDate) q = q.gte("created_at", startDate);
+    if (endDate) q = q.lte("created_at", endDate);
+    if (search) {
+      q = q.or(
+        `first_name.ilike.%${search}%,last_name.ilike.%${search}%`,
+        { referencedTable: "contacts" },
+      );
     }
 
-    let { data, error: fetchError, count: totalCount } = await runOn("calls_enriched");
-    if (fetchError && /does not exist|relation .* does not exist/i.test(fetchError.message)) {
-      // View missing — fall back
-      ({ data, error: fetchError, count: totalCount } = await runOn("calls"));
-    }
+    const { data, error: fetchError, count: totalCount } = await q;
 
     if (fetchError) {
       setError(fetchError.message);
