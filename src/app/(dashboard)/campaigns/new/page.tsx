@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ArrowLeft, CheckCircle2, Users, Bot, Clock, Rocket } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createCampaign, useAIAgents } from "@/hooks/use-campaigns";
+import { getVoiceName } from "@/lib/voices";
 
 const STEPS = [
   { id: 1, label: "Audience",   icon: Users },
@@ -131,7 +132,7 @@ export default function NewCampaignPage() {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm font-semibold text-white">{a.name}</p>
-                        <p className="text-xs text-zinc-500 mt-0.5">{a.voice_id} · {a.total_calls || 0} calls made</p>
+                        <p className="text-xs text-zinc-500 mt-0.5">{getVoiceName(a.voice_id)} · {a.total_calls || 0} calls made</p>
                       </div>
                       {form.ai_agent_id === a.id && <CheckCircle2 className="h-5 w-5 text-indigo-400" />}
                     </div>

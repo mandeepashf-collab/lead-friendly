@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { X, Loader2 } from "lucide-react";
 import { createAIAgent, updateAIAgent } from "@/hooks/use-ai-agents";
+import { ALL_VOICES, getVoiceDisplayLabel } from "@/lib/voices";
 import type { AIAgent } from "@/types/database";
 
 interface Props {
@@ -11,14 +12,17 @@ interface Props {
   onSaved: () => void;
 }
 
-const VOICE_OPTIONS = [
-  { value: "alloy", label: "Alloy" },
-  { value: "echo", label: "Echo" },
-  { value: "fable", label: "Fable" },
-  { value: "onyx", label: "Onyx" },
-  { value: "nova", label: "Nova" },
-  { value: "shimmer", label: "Shimmer" },
-];
+// Build the voice option list from the central ElevenLabs voice catalog.
+// Previously this dialog hardcoded OpenAI TTS voices (Alloy, Echo, Fable,
+// Onyx, Nova, Shimmer) which is the wrong provider — we use ElevenLabs.
+// Only show ElevenLabs voices here to keep the dropdown selection UX
+// aligned with what the backend TTS can actually render.
+const VOICE_OPTIONS = ALL_VOICES
+  .filter(v => v.provider === "elevenlabs")
+  .map(v => ({ value: v.id, label: getVoiceDisplayLabel(v.id) }));
+
+// Safer default voice id: Rachel (a real ElevenLabs voice) instead of "alloy".
+const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
 
 const TYPE_OPTIONS = [
   { value: "inbound", label: "Inbound" },
@@ -34,7 +38,7 @@ export function AgentDialog({ agent, onClose, onSaved }: Props) {
   const [form, setForm] = useState({
     name: agent?.name || "",
     type: agent?.type || "outbound",
-    voice_id: agent?.voice_id || "alloy",
+    voice_id: agent?.voice_id || DEFAULT_VOICE_ID,
     system_prompt: agent?.system_prompt || "",
     greeting_message: agent?.greeting_message || "",
     cost_per_minute: agent ? parseFloat((agent as any).cost_per_minute || "0") : 0,

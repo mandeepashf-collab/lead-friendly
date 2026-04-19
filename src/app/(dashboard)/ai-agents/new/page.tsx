@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createAIAgent } from "@/hooks/use-ai-agents";
+import { getVoiceName, getVoiceMeta } from "@/lib/voices";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface ElevenLabsVoice {
@@ -559,7 +560,29 @@ export default function NewAgentPage() {
     setTimeout(() => router.push("/ai-agents"), 1000);
   };
 
-  const currentVoice = voices.find(v => v.id === form.voice_id);
+  // Prefer the live /api/voice/voices result; fall back to the static
+  // voice catalog in src/lib/voices.ts so Summary/Quick Info never shows
+  // a raw ElevenLabs voice ID (e.g. "21m00Tcm4TlvDq8ikWAM") if the API
+  // is slow or unreachable.
+  let currentVoice: ElevenLabsVoice | undefined = voices.find(v => v.id === form.voice_id);
+  if (!currentVoice && form.voice_id) {
+    const meta = getVoiceMeta(form.voice_id);
+    if (meta) {
+      currentVoice = {
+        id: meta.id,
+        name: meta.name,
+        preview_url: "",
+        gender: meta.gender ?? "",
+        accent: meta.accent ?? "",
+        age: "",
+        use_case: "",
+        description: meta.description ?? "",
+        category: "premade",
+      };
+    }
+  }
+  // Friendly label for display-only surfaces (never leaks raw IDs).
+  const voiceDisplayName = currentVoice?.name || getVoiceName(form.voice_id);
 
   return (
     <div className="space-y-5">
@@ -1159,7 +1182,7 @@ export default function NewAgentPage() {
                 </div>
                 <div className="flex justify-between py-2 border-b border-zinc-800">
                   <span className="text-zinc-500">Voice</span>
-                  <span className="text-white">{currentVoice?.name || "Default"}</span>
+                  <span className="text-white">{voiceDisplayName}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b border-zinc-800">
                   <span className="text-zinc-500">Role</span>
@@ -1231,7 +1254,7 @@ export default function NewAgentPage() {
                 <div className="space-y-2 text-xs">
                   <div className="flex justify-between">
                     <span className="text-zinc-500">Voice</span>
-                    <span className="text-white">{currentVoice?.name || "Default"}</span>
+                    <span className="text-white">{voiceDisplayName}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-zinc-500">Number Pool</span>
