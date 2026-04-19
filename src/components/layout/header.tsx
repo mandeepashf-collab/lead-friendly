@@ -8,12 +8,31 @@ import { NotificationPanel } from "@/components/layout/notification-panel";
 import { UserMenu } from "@/components/layout/user-menu";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { QuickAdd } from "@/components/layout/quick-add";
+import InitiateCallModal from "@/components/calls/InitiateCallModal";
 
 function SoftphoneButton() {
   const [open, setOpen] = useState(false);
   const [number, setNumber] = useState("");
+  const [dialedNumber, setDialedNumber] = useState<string | null>(null);
   const KEYS = ["1","2","3","4","5","6","7","8","9","*","0","#"];
   const SUB: Record<string,string> = {"1":"","2":"ABC","3":"DEF","4":"GHI","5":"JKL","6":"MNO","7":"PQRS","8":"TUV","9":"WXYZ","*":"","0":"+","#":""};
+
+  // Normalize what the user typed into E.164. If they typed 10 digits, assume +1.
+  const normalizeToE164 = (raw: string): string | null => {
+    const digits = raw.replace(/\D/g, "");
+    if (raw.startsWith("+") && digits.length >= 10) return `+${digits}`;
+    if (digits.length === 10) return `+1${digits}`;
+    if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+    return null;
+  };
+
+  const handleCall = () => {
+    const e164 = normalizeToE164(number);
+    if (!e164) return;
+    setDialedNumber(e164);
+    setOpen(false);
+  };
+
   return (
     <div className="relative">
       <button onClick={() => setOpen(!open)}
@@ -25,7 +44,7 @@ function SoftphoneButton() {
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-11 z-50 w-72 bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/60">
-              <div><p className="text-xs text-zinc-500">Calling from</p><p className="text-sm text-white font-medium">+12722194909</p></div>
+              <div><p className="text-xs text-zinc-500">Dialpad</p><p className="text-xs text-zinc-500">10-digit US or +E.164</p></div>
               <button onClick={() => setOpen(false)} className="p-1 text-zinc-600 hover:text-white">
                 <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
               </button>
@@ -44,8 +63,12 @@ function SoftphoneButton() {
                 ))}
               </div>
               <div className="flex gap-2">
-                <button onClick={() => { if(number) { window.open(`tel:${number}`); } }} disabled={!number}
-                  className="flex-1 py-3.5 rounded-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-30 disabled:bg-zinc-800 text-white flex items-center justify-center transition-colors">
+                <button
+                  onClick={handleCall}
+                  disabled={!normalizeToE164(number)}
+                  title="Start a call (choose manual or AI inside)"
+                  className="flex-1 py-3.5 rounded-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-30 disabled:bg-zinc-800 text-white flex items-center justify-center transition-colors"
+                >
                   <PhoneCall className="h-5 w-5" />
                 </button>
                 {number && (
@@ -58,6 +81,14 @@ function SoftphoneButton() {
             </div>
           </div>
         </>
+      )}
+      {dialedNumber && (
+        <InitiateCallModal
+          contactName="Dialed number"
+          contactPhone={dialedNumber}
+          onClose={() => { setDialedNumber(null); setNumber(""); }}
+          onCallStarted={() => { setDialedNumber(null); setNumber(""); }}
+        />
       )}
     </div>
   );
