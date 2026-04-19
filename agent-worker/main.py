@@ -280,7 +280,7 @@ async def _run_voice_session(
     voice_stability = agent_config.get("voiceStability", 0.5)
 
     tts = elevenlabs.TTS(
-        model_id="eleven_flash_v2_5",
+        model="eleven_flash_v2_5",
         voice_id=voice_id,
         voice_settings=elevenlabs.VoiceSettings(
             stability=voice_stability,
