@@ -347,24 +347,68 @@ export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>("organization");
   const [orgName, setOrgName] = useState("");
   const [saved, setSaved] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [repPhone, setRepPhone] = useState("");
+  const [repPhoneSaving, setRepPhoneSaving] = useState(false);
+  const [repPhoneError, setRepPhoneError] = useState("");
   const brand = useBrand();
 
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
-      supabase.from("profiles").select("organization_id, organizations(name)")
+      setUserId(user.id);
+      supabase.from("profiles").select("organization_id, phone, organizations(name)")
         .eq("id", user.id).single()
         .then(({ data }) => {
-          const org = (data as Record<string, unknown>)?.organizations as { name?: string } | null;
+          const d = (data as Record<string, unknown>) ?? {};
+          const org = d.organizations as { name?: string } | null;
           if (org?.name) setOrgName(org.name);
+          const phone = d.phone as string | null;
+          if (phone) setRepPhone(phone);
         });
     });
+  }, []);
+
+  // Jump to phone section if URL hash is #phone
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash === "#phone") {
+      setTab("organization");
+      // Wait for tab render, then scroll
+      setTimeout(() => {
+        document.getElementById("your-phone")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
+    }
   }, []);
 
   const handleSave = () => {
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleSaveRepPhone = async () => {
+    if (!userId) return;
+    setRepPhoneError("");
+    const trimmed = repPhone.trim();
+    // Accept empty (clears) or +E.164 format (+ then 10-15 digits)
+    if (trimmed && !/^\+[1-9]\d{9,14}$/.test(trimmed)) {
+      setRepPhoneError("Use E.164 format, e.g. +12534026951");
+      return;
+    }
+    setRepPhoneSaving(true);
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("profiles")
+      .update({ phone: trimmed || null })
+      .eq("id", userId);
+    setRepPhoneSaving(false);
+    if (error) {
+      setRepPhoneError(error.message);
+    } else {
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    }
   };
 
   return (
@@ -397,6 +441,28 @@ export default function SettingsPage() {
             <InputField label="Organization Name" value={orgName} onChange={setOrgName} placeholder="Lead Friendly Agency" />
             <InputField label="Website" value="" onChange={() => {}} placeholder="https://yourwebsite.com" />
             <InputField label="Support Email" value="" onChange={() => {}} placeholder="support@yourcompany.com" type="email" />
+          </Section>
+          <div id="your-phone" />
+          <Section
+            title="Your Phone Number"
+            description="Used when you initiate a manual call — we ring this number first, then bridge in the contact."
+          >
+            <InputField
+              label="Your Mobile / Desk Phone"
+              value={repPhone}
+              onChange={setRepPhone}
+              placeholder="+12534026951"
+              hint="E.164 format (+country + digits). Leave blank to clear."
+            />
+            {repPhoneError && <p className="text-xs text-red-400">{repPhoneError}</p>}
+            <button
+              onClick={handleSaveRepPhone}
+              disabled={repPhoneSaving}
+              className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+            >
+              {repPhoneSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Save Phone
+            </button>
           </Section>
           <Section title="Business Hours" description="Set when your team is available">
             <div className="grid grid-cols-2 gap-4">

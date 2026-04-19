@@ -66,11 +66,17 @@ export async function POST(request: NextRequest) {
 
   const orgId = profile.organization_id;
 
-  // Rep phone: explicit param > user profile phone > fromNumber
-  const repPhoneNumber = repPhone || profile.phone || fromNumber;
+  // Rep phone: explicit param > user profile phone. NEVER fall back to
+  // fromNumber — that's a Lead Friendly-owned Telnyx number, not the rep's
+  // cell, and silently using it causes the "call rings nobody" bug where the
+  // UI shows a live timer but no phone actually rang.
+  const repPhoneNumber = repPhone || profile.phone;
   if (!repPhoneNumber) {
     return NextResponse.json(
-      { error: "No rep phone number available. Set your phone number in Settings, or provide repPhone." },
+      {
+        error: "Rep phone not configured. Add your phone in Settings.",
+        code: "REP_PHONE_MISSING",
+      },
       { status: 400 },
     );
   }
