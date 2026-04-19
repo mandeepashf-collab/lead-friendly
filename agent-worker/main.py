@@ -383,9 +383,6 @@ async def _run_voice_session(
 
     asyncio.ensure_future(_duration_watchdog())
 
-    # Keep the entrypoint alive until the room closes
-    await session.wait_for_close()
-
     # ── Post-call: persist transcript + get AI summary ─────────
     call_duration = time.time() - call_start_time
     await _post_call_complete(
