@@ -71,6 +71,25 @@ export function WebRTCCall({ agentId, agentName, systemPrompt, voiceId }: Props)
     };
   }, [callActive, status]);
 
+  // Cleanup on unmount — if user navigates away during an active call, the
+  // LiveKit room and mic track stay open otherwise. Disconnect and tear
+  // down all audio elements so nothing lingers in the background.
+  useEffect(() => {
+    return () => {
+      if (roomRef.current) {
+        try {
+          roomRef.current.disconnect();
+        } catch {
+          // room already torn down — ignore
+        }
+        roomRef.current = null;
+      }
+      agentAudioElements.current.forEach((el) => el.remove());
+      agentAudioElements.current = [];
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
   const formatDuration = (s: number) =>
     `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
