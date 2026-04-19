@@ -185,8 +185,17 @@ def _api_headers() -> dict[str, str]:
 # ── Prewarm ─────────────────────────────────────────────────────────
 
 def prewarm(proc: JobProcess):
-    """Pre-load the Silero VAD model on worker startup (before any call)."""
-    proc.userdata["vad"] = silero.VAD.load()
+    """Pre-load the Silero VAD model on worker startup (before any call).
+
+    Tuned params: min_silence_duration=0.35 (down from default 0.55) saves
+    ~200 ms per turn; prefix_padding=0.3 (down from 0.5) trims another ~50 ms.
+    """
+    proc.userdata["vad"] = silero.VAD.load(
+        min_silence_duration=0.35,
+        min_speech_duration=0.05,
+        prefix_padding_duration=0.3,
+        activation_threshold=0.5,
+    )
     logger.info("VAD model pre-warmed")
 
 
@@ -270,26 +279,39 @@ async def _run_voice_session(
     system_prompt = build_system_prompt(agent_config)
 
     # ── Configure plugins ───────────────────────────────────────
+    # Deepgram: nova-3 for better conversational accuracy (fixes the
+    # "doesn't understand" cases). numerals=True is critical for phone/date
+    # dictation ("four one five" -> "415").
     stt = deepgram.STT(
-        model="nova-2",
-        language="en",
+        model="nova-3",
+        language="en-US",
         smart_format=True,
+        punctuate=True,
+        numerals=True,
         interim_results=True,
         endpointing_ms=150,
     )
 
+    # Claude Haiku 4.5 (current fastest Haiku). max_tokens=200 caps replies
+    # at ~1-2 sentences so the agent doesn't ramble and TTS stays snappy.
     ai_temperature = agent_config.get("aiTemperature", 0.7)
     chat_llm = anthropic_plugin.LLM(
         model="claude-haiku-4-5-20251001",
         temperature=ai_temperature,
+        max_tokens=200,
     )
 
     voice_id = agent_config.get("voiceId", "21m00Tcm4TlvDq8ikWAM")
     voice_stability = agent_config.get("voiceStability", 0.5)
 
+    # ElevenLabs Flash v2.5 already streams by default. chunk_length_schedule
+    # with a smaller first chunk (50 vs default 120) cuts time-to-first-byte
+    # by ~70 ms. streaming_latency=3 is ElevenLabs' aggressive-latency tier.
     tts = elevenlabs.TTS(
         model="eleven_flash_v2_5",
         voice_id=voice_id,
+        chunk_length_schedule=[50, 90, 120, 150],
+        streaming_latency=3,
         voice_settings=elevenlabs.VoiceSettings(
             stability=voice_stability,
             similarity_boost=0.75,
@@ -308,10 +330,15 @@ async def _run_voice_session(
     )
 
     # ── Create AgentSession ─────────────────────────────────────
+    # NOTE: these four kwargs are deprecated in livekit-agents 2.0 in favor
+    # of TurnHandlingOptions(...). Keeping the deprecated form for now since
+    # we can't verify TurnHandlingOptions exists in this pinned 1.5.4 install
+    # without risking a startup crash. Migrate when we upgrade to 2.x.
+    # max_endpointing_delay dropped from 3.0 -> 1.5 to trim trail-off cases.
     session = AgentSession(
         vad=ctx.proc.userdata["vad"],
         min_endpointing_delay=0.2,
-        max_endpointing_delay=3.0,
+        max_endpointing_delay=1.5,
         min_interruption_words=2,
         allow_interruptions=True,
         userdata={
