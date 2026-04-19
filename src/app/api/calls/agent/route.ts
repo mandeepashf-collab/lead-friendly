@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Server misconfigured: missing Telnyx credentials" }, { status: 500 });
   }
 
-  // ── Auth ────────────────────────────────────────────────────────
+  // Auth
   const campaignKey = request.headers.get("x-campaign-launch-key");
   const isCampaignLaunch = !!campaignKey
     && !!process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -81,20 +81,20 @@ export async function POST(request: NextRequest) {
 
   const log = callLogger("agent-" + Date.now());
 
-  // ── Normalize number ───────────────────────────────────────────
   const toNumber = contactPhone.startsWith("+") ? contactPhone : `+1${contactPhone.replace(/\D/g, "")}`;
 
-  // ── Number Pool Rotation ───────────────────────────────────────
+  // Number Pool Rotation
   let from: string;
   if (fromNumber) {
     from = fromNumber.startsWith("+") ? fromNumber : `+1${fromNumber.replace(/\D/g, "")}`;
   } else {
     const { data: nums, error: numError } = await supabase
       .from("phone_numbers")
-      .select("id, number, daily_count, daily_limit")
+      .select("id, number, daily_used, daily_cap, rotation_order, last_used_at")
       .eq("organization_id", orgId!)
       .eq("status", "active")
-      .order("daily_count", { ascending: true });
+      .order("rotation_order", { ascending: true })
+      .order("last_used_at", { ascending: true, nullsFirst: true });
 
     if (numError || !nums || nums.length === 0) {
       return NextResponse.json(
@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const underLimit = nums.filter(n => ((n.daily_count as number) || 0) < ((n.daily_limit as number) || 50));
+    const underLimit = nums.filter(n => ((n.daily_used as number) || 0) < ((n.daily_cap as number) || 50));
     if (underLimit.length === 0) {
       return NextResponse.json(
         { error: "All phone numbers have reached their daily call limit." },
@@ -114,17 +114,20 @@ export async function POST(request: NextRequest) {
     const selected = underLimit[0];
     from = selected.number as string;
 
-    const newCount = ((selected.daily_count as number) || 0) + 1;
-    const limit = (selected.daily_limit as number) || 50;
+    const newCount = ((selected.daily_used as number) || 0) + 1;
+    const cap = (selected.daily_cap as number) || 50;
     await supabase
       .from("phone_numbers")
-      .update({ daily_count: newCount, ...(newCount >= limit ? { status: "exhausted" } : {}) })
+      .update({
+        daily_used: newCount,
+        last_used_at: new Date().toISOString(),
+        ...(newCount >= cap ? { status: "exhausted" } : {}),
+      })
       .eq("id", selected.id);
 
-    log.info("number_pool_selected", { from, count: newCount, limit });
+    log.info("number_pool_selected", { from, count: newCount, cap });
   }
 
-  // ── Create call record ─────────────────────────────────────────
   const { data: callRecord, error: dbError } = await supabase
     .from("calls")
     .insert({
@@ -147,7 +150,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `DB insert failed: ${dbError.message}` }, { status: 500 });
   }
 
-  // Handle insert-succeeded-but-readback-failed (RLS)
   let callRecordId: string;
   if (!callRecord) {
     const { data: latest } = await supabase
@@ -169,7 +171,6 @@ export async function POST(request: NextRequest) {
 
   log.info("call_record_created", { callRecordId });
 
-  // ── Dial via Telnyx ────────────────────────────────────────────
   const dialResult = await dial({
     to: toNumber,
     from,

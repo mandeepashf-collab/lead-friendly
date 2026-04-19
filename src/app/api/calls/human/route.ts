@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Server misconfigured: missing Telnyx credentials" }, { status: 500 });
   }
 
-  // ── Auth ────────────────────────────────────────────────────────
+  // Auth
   const userSupabase = await createClient();
   const { data: { user } } = await userSupabase.auth.getUser();
   if (!user) {
@@ -84,36 +84,40 @@ export async function POST(request: NextRequest) {
 
   const log = callLogger("human-" + Date.now());
 
-  // ── Normalize numbers ──────────────────────────────────────────
+  // Normalize numbers
   const toNumber = contactPhone.startsWith("+") ? contactPhone : `+1${contactPhone.replace(/\D/g, "")}`;
   const repNum = repPhoneNumber.startsWith("+") ? repPhoneNumber : `+1${repPhoneNumber.replace(/\D/g, "")}`;
 
-  // ── Number pool (pick a from number if not provided) ───────────
+  // Number pool (pick a from number if not provided)
   let from: string;
   if (fromNumber) {
     from = fromNumber.startsWith("+") ? fromNumber : `+1${fromNumber.replace(/\D/g, "")}`;
   } else {
     const { data: nums } = await supabase
       .from("phone_numbers")
-      .select("id, number, daily_count, daily_limit")
+      .select("id, number, daily_used, daily_cap, rotation_order, last_used_at")
       .eq("organization_id", orgId)
       .eq("status", "active")
-      .order("daily_count", { ascending: true });
+      .order("rotation_order", { ascending: true })
+      .order("last_used_at", { ascending: true, nullsFirst: true });
 
-    const available = (nums || []).filter(n => ((n.daily_count as number) || 0) < ((n.daily_limit as number) || 50));
+    const available = (nums || []).filter(n => ((n.daily_used as number) || 0) < ((n.daily_cap as number) || 50));
     if (available.length === 0) {
       return NextResponse.json({ error: "No active phone numbers available" }, { status: 400 });
     }
     from = available[0].number as string;
 
-    // Increment counter
+    // Increment counter AND stamp last_used_at — critical for rotation
     await supabase
       .from("phone_numbers")
-      .update({ daily_count: ((available[0].daily_count as number) || 0) + 1 })
+      .update({
+        daily_used: ((available[0].daily_used as number) || 0) + 1,
+        last_used_at: new Date().toISOString(),
+      })
       .eq("id", available[0].id);
   }
 
-  // ── Create call record ─────────────────────────────────────────
+  // Create call record
   const { data: callRecord, error: dbError } = await supabase
     .from("calls")
     .insert({
@@ -138,9 +142,7 @@ export async function POST(request: NextRequest) {
 
   log.info("call_record_created", { callRecordId: callRecord.id });
 
-  // ── Dial Leg A: call the REP first ─────────────────────────────
-  // The client_state carries everything the webhook needs to dial Leg B
-  // when the rep picks up.
+  // Dial Leg A: call the REP first
   const dialResult = await dial({
     to: repNum,
     from: from,
@@ -149,9 +151,9 @@ export async function POST(request: NextRequest) {
       contactId: contactId ?? null,
       organizationId: orgId,
       callMode: "callback_bridge",
-      bridgeTarget: toNumber,       // contact's number — dial this on rep pickup
-      bridgeFrom: from,             // caller ID for leg B
-      legA: true,                   // flag so webhook knows this is the rep leg
+      bridgeTarget: toNumber,
+      bridgeFrom: from,
+      legA: true,
     },
   });
 

@@ -611,7 +611,7 @@ export default function EditAgentPage() {
       const res = await fetch("/api/calls/trigger", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contactPhone: testPhone.trim(), fromNumber: "+12722194909", agentId: id, isTest: true }),
+        body: JSON.stringify({ contactPhone: testPhone.trim(), agentId: id, isTest: true }),
       });
       const data = await res.json() as { callRecordId?: string; error?: string };
       if (res.ok) setTestMsg({ text: `Calling ${testPhone}... Call ID: ${data.callRecordId}`, ok: true });

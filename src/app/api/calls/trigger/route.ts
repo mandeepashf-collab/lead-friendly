@@ -34,7 +34,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'contactPhone is required' }, { status: 400 });
   }
 
-  // Env sanity check — helps debugging when a deploy is missing keys
   if (!process.env.TELNYX_API_KEY || !process.env.TELNYX_APP_ID) {
     console.error('Missing TELNYX env vars');
     return NextResponse.json(
@@ -43,7 +42,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Resolve the supabase client + organization_id based on auth mode
   const campaignKey = request.headers.get('x-campaign-launch-key');
   const isCampaignLaunch = !!campaignKey
     && !!process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -52,7 +50,6 @@ export async function POST(request: NextRequest) {
   let orgId: string | null = null;
 
   if (isCampaignLaunch) {
-    // Campaign path: trust the caller, use service-role, require organizationId
     if (!organizationId) {
       return NextResponse.json(
         { error: 'organizationId required for campaign launch' },
@@ -61,7 +58,6 @@ export async function POST(request: NextRequest) {
     }
     orgId = organizationId;
   } else {
-    // User path: resolve org from signed-in user profile
     const userSupabase = await createClient();
     const { data: { user }, error: authError } = await userSupabase.auth.getUser();
     console.log('Auth result:', user?.id ?? 'NO USER', authError?.message ?? 'no error');
@@ -80,9 +76,6 @@ export async function POST(request: NextRequest) {
     orgId = profile.organization_id;
   }
 
-  // Use service-role client for all DB writes — bypasses RLS.
-  // This is safe because we've already verified the user's identity
-  // and organization above.
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('SUPABASE_SERVICE_ROLE_KEY not set');
     return NextResponse.json({ error: 'Server config error: SUPABASE_SERVICE_ROLE_KEY missing' }, { status: 500 });
@@ -94,24 +87,20 @@ export async function POST(request: NextRequest) {
     { auth: { persistSession: false, autoRefreshToken: false } }
   );
 
-  // Normalise to E.164 (default US +1 if no leading +)
   const toNumber = contactPhone.startsWith('+') ? contactPhone : `+1${contactPhone.replace(/\D/g, '')}`;
 
-  // ── Number Pool Rotation ──────────────────────────────────────
-  // If no fromNumber is specified, pick from the org's number pool
-  // using round-robin rotation based on daily usage counts.
-  // This prevents spam flagging by distributing calls across numbers.
+  // Number Pool Rotation
   let from: string;
   if (fromNumber) {
     from = fromNumber.startsWith('+') ? fromNumber : `+1${fromNumber.replace(/\D/g, '')}`;
   } else {
-    // Fetch all active numbers that haven't hit their daily limit
     const { data: availableNumbers, error: numError } = await supabase
       .from('phone_numbers')
-      .select('id, number, daily_count, daily_limit')
+      .select('id, number, daily_used, daily_cap, rotation_order, last_used_at')
       .eq('organization_id', orgId!)
       .eq('status', 'active')
-      .order('daily_count', { ascending: true }); // lowest usage first = round-robin
+      .order('rotation_order', { ascending: true })
+      .order('last_used_at', { ascending: true, nullsFirst: true });
 
     if (numError || !availableNumbers || availableNumbers.length === 0) {
       console.error('No available phone numbers:', numError?.message);
@@ -121,15 +110,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Filter to numbers that haven't exhausted their daily limit
     const underLimit = availableNumbers.filter(n => {
-      const limit = (n.daily_limit as number) || 50;
-      const used = (n.daily_count as number) || 0;
-      return used < limit;
+      const cap = (n.daily_cap as number) || 50;
+      const used = (n.daily_used as number) || 0;
+      return used < cap;
     });
 
     if (underLimit.length === 0) {
-      // All numbers exhausted — mark them and inform user
       console.warn('All phone numbers exhausted daily limits for org:', orgId);
       return NextResponse.json(
         { error: 'All phone numbers have reached their daily call limit. Add more numbers or wait until tomorrow.' },
@@ -137,32 +124,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Pick the number with lowest daily_count (round-robin effect)
     const selectedNumber = underLimit[0];
     from = selectedNumber.number as string;
 
-    // Increment the daily counter for this number
+    const newCount = ((selectedNumber.daily_used as number) || 0) + 1;
     await supabase
       .from('phone_numbers')
-      .update({ daily_count: ((selectedNumber.daily_count as number) || 0) + 1 })
+      .update({
+        daily_used: newCount,
+        last_used_at: new Date().toISOString(),
+      })
       .eq('id', selectedNumber.id);
 
-    // Mark exhausted if at limit
-    const newCount = ((selectedNumber.daily_count as number) || 0) + 1;
-    const limit = (selectedNumber.daily_limit as number) || 50;
-    if (newCount >= limit) {
+    const cap = (selectedNumber.daily_cap as number) || 50;
+    if (newCount >= cap) {
       await supabase
         .from('phone_numbers')
         .update({ status: 'exhausted' })
         .eq('id', selectedNumber.id);
-      console.log(`Number ${from} exhausted (${newCount}/${limit}), marked as exhausted`);
+      console.log(`Number ${from} exhausted (${newCount}/${cap}), marked as exhausted`);
     }
 
-    console.log(`[Number Pool] Selected ${from} (${newCount}/${limit} daily) from ${availableNumbers.length} numbers`);
+    console.log(`[Number Pool] Selected ${from} (${newCount}/${cap} daily) from ${availableNumbers.length} numbers`);
   }
 
-  // 1) Create a call record up front
-  //    Use .select('id') and .maybeSingle() to avoid PGRST204 if RLS blocks readback.
   const insertPayload = {
     organization_id: orgId!,
     contact_id: contactId ?? null,
@@ -189,8 +174,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  let callRecordId: string;
   if (!callRecord) {
-    // Insert may have succeeded but readback failed (RLS). Try a direct lookup.
     console.warn('Insert returned no data — trying direct lookup');
     const { data: latestCall } = await supabase
       .from('calls')
@@ -206,18 +191,13 @@ export async function POST(request: NextRequest) {
       console.error('Call record truly not created — insert returned no data and lookup found nothing');
       return NextResponse.json({ error: 'DB insert succeeded but record not found on lookup' }, { status: 500 });
     }
-    // Use the looked-up record
     console.log('Found call record via lookup:', latestCall.id);
-    var callRecordId = latestCall.id;
+    callRecordId = latestCall.id;
   } else {
     console.log('Call record created:', callRecord.id);
-    var callRecordId = callRecord.id;
+    callRecordId = callRecord.id;
   }
 
-  // 2) Encode context so our voice webhook knows which call this is.
-  //    We include organizationId so the webhook can fall back to the org's
-  //    first active agent if agentId is null (e.g. manual dial without
-  //    specifying an agent).
   const isManualCall = callMode === 'manual' || !agentId;
   const clientState = Buffer.from(
     JSON.stringify({
@@ -231,10 +211,6 @@ export async function POST(request: NextRequest) {
     })
   ).toString('base64');
 
-  // 3) Fire the outbound call via Telnyx
-  //    webhook_url is OPTIONAL here — Telnyx will fall back to the webhook
-  //    configured on the Voice Application if we omit it. We set it explicitly
-  //    so staging/preview deploys route to their own URL.
   const webhookUrl = process.env.NEXT_PUBLIC_APP_URL
     ? `${process.env.NEXT_PUBLIC_APP_URL}/api/voice/answer`
     : 'https://www.leadfriendly.com/api/voice/answer';
@@ -280,8 +256,6 @@ export async function POST(request: NextRequest) {
     .update({ telnyx_call_id: callControlId, status: 'ringing' })
     .eq('id', callRecordId);
 
-  // 4) RESPOND TO THE CLIENT — this is what was missing before.
-  //    The UI polls callRecordId to surface status changes.
   return NextResponse.json({
     callRecordId: callRecordId,
     telnyxCallControlId: callControlId,
