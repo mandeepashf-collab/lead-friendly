@@ -1,13 +1,12 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Search,
   Plus,
   Upload,
   Download,
-  Filter,
   Phone,
   Mail,
   Building2,
@@ -21,15 +20,14 @@ import {
   UserPlus,
   FileSpreadsheet,
   PhoneCall,
-  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { createClient } from "@/lib/supabase/client";
 import { useContacts, deleteContact } from "@/hooks/use-contacts";
 import { ContactDialog } from "./contact-dialog";
 import { ContactDetail } from "./contact-detail";
 import { ImportDialog } from "./import-dialog";
 import type { Contact } from "@/types/database";
+import InitiateCallModal from "@/components/calls/InitiateCallModal";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "All", color: "" },
@@ -63,75 +61,18 @@ export default function ContactsPage() {
   const [editContact, setEditContact] = useState<Contact | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [callingId, setCallingId] = useState<string | null>(null);
+  const [callModalContact, setCallModalContact] = useState<Contact | null>(null);
   const [callToast, setCallToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const PAGE_SIZE = 25;
 
-  // Pre-fetch the org's active phone number + default AI agent so the call
-  // button can send the required fields to /api/calls/trigger.
-  const [orgFromNumber, setOrgFromNumber] = useState<string | null>(null);
-  const [orgAgentId, setOrgAgentId] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data: profile } = await supabase
-        .from("profiles").select("organization_id").eq("id", user.id).single();
-      if (!profile?.organization_id || cancelled) return;
-
-      const [{ data: phoneRow }, { data: agentRow }] = await Promise.all([
-        supabase
-          .from("phone_numbers")
-          .select("number")
-          .eq("organization_id", profile.organization_id)
-          .eq("status", "active")
-          .order("created_at", { ascending: true })
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from("ai_agents")
-          .select("id")
-          .eq("organization_id", profile.organization_id)
-          .eq("status", "active")
-          .order("created_at", { ascending: true })
-          .limit(1)
-          .maybeSingle(),
-      ]);
-      if (cancelled) return;
-      setOrgFromNumber((phoneRow as { number?: string } | null)?.number ?? null);
-      setOrgAgentId((agentRow as { id?: string } | null)?.id ?? null);
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  const triggerCall = useCallback(async (contactId: string, phone: string | null) => {
-    if (!phone) { setCallToast({ msg: "No phone number on this contact", ok: false }); setTimeout(() => setCallToast(null), 4000); return; }
-    if (!orgFromNumber) { setCallToast({ msg: "No active phone number — add one in Phone Numbers", ok: false }); setTimeout(() => setCallToast(null), 5000); return; }
-    if (!orgAgentId) { setCallToast({ msg: "No active AI agent — create one in AI Agents first", ok: false }); setTimeout(() => setCallToast(null), 5000); return; }
-    setCallingId(contactId);
-    try {
-      const res = await fetch("/api/calls/trigger", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contactId,
-          contactPhone: phone,
-          fromNumber: orgFromNumber,
-          agentId: orgAgentId,
-        }),
-      });
-      const data = await res.json() as { message?: string; error?: string };
-      setCallToast({ msg: data.message || data.error || "Call initiated", ok: res.ok });
-    } catch {
-      setCallToast({ msg: "Failed to trigger call", ok: false });
-    } finally {
-      setCallingId(null);
-      setTimeout(() => setCallToast(null), 5000);
+  const openCallModal = useCallback((contact: Contact) => {
+    if (!contact.phone) {
+      setCallToast({ msg: "No phone number on this contact", ok: false });
+      setTimeout(() => setCallToast(null), 4000);
+      return;
     }
-  }, [orgFromNumber, orgAgentId]);
+    setCallModalContact(contact);
+  }, []);
 
   const { contacts, count, loading, refetch } = useContacts({
     search: search || undefined,
@@ -325,15 +266,12 @@ export default function ContactsPage() {
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
-                        onClick={() => triggerCall(contact.id, contact.phone)}
-                        disabled={callingId === contact.id}
-                        className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium bg-indigo-600/10 text-indigo-400 hover:bg-indigo-600/20 disabled:opacity-50"
-                        title="Call with AI"
+                        onClick={() => openCallModal(contact)}
+                        className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium bg-indigo-600/10 text-indigo-400 hover:bg-indigo-600/20"
+                        title="Call (manual or AI — choose inside)"
                       >
-                        {callingId === contact.id
-                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          : <PhoneCall className="h-3.5 w-3.5" />}
-                        {callingId === contact.id ? "Calling…" : "Call"}
+                        <PhoneCall className="h-3.5 w-3.5" />
+                        Call
                       </button>
                       <button onClick={goToContact} className="rounded p-1 text-zinc-500 hover:bg-zinc-700 hover:text-white" title="View"><Eye className="h-4 w-4" /></button>
                       <button onClick={() => { setEditContact(contact); setShowAddDialog(true); }} className="rounded p-1 text-zinc-500 hover:bg-zinc-700 hover:text-white" title="Edit"><Edit2 className="h-4 w-4" /></button>
@@ -365,6 +303,19 @@ export default function ContactsPage() {
       {showAddDialog && <ContactDialog contact={editContact} onClose={() => { setShowAddDialog(false); setEditContact(null); }} onSaved={() => { setShowAddDialog(false); setEditContact(null); refetch(); }} />}
       {showDetail && selectedContact && <ContactDetail contact={selectedContact} onClose={() => { setShowDetail(false); setSelectedContact(null); }} onEdit={() => { setShowDetail(false); setEditContact(selectedContact); setShowAddDialog(true); }} onDeleted={() => { setShowDetail(false); setSelectedContact(null); refetch(); }} />}
       {showImport && <ImportDialog onClose={() => setShowImport(false)} onImported={() => { setShowImport(false); refetch(); }} />}
+      {callModalContact && callModalContact.phone && (
+        <InitiateCallModal
+          contactName={[callModalContact.first_name, callModalContact.last_name].filter(Boolean).join(" ") || "Unnamed"}
+          contactPhone={callModalContact.phone}
+          contactId={callModalContact.id}
+          onClose={() => setCallModalContact(null)}
+          onCallStarted={() => {
+            setCallModalContact(null);
+            setCallToast({ msg: "✓ Call initiated", ok: true });
+            setTimeout(() => setCallToast(null), 5000);
+          }}
+        />
+      )}
     </div>
   );
 }

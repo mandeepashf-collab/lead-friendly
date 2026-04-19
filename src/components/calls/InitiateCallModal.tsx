@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Phone, X, Loader2, AlertTriangle } from 'lucide-react';
+import { Phone, X, Loader2, AlertTriangle, Bot, User as UserIcon } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
 interface PhoneNumber {
@@ -12,14 +12,27 @@ interface PhoneNumber {
   status?: string;
 }
 
+interface AgentRow {
+  id: string;
+  name: string;
+  status?: string;
+}
+
 interface Props {
   contactName: string;
   contactPhone: string;
   contactId?: string;
+  /**
+   * Optional pre-selected agent. If provided, the modal opens in AI-Agent
+   * mode with this agent locked in. If omitted (default), user chooses
+   * Manual vs AI Agent inside the modal.
+   */
   agentId?: string;
   onClose: () => void;
   onCallStarted: (callRecordId: string) => void;
 }
+
+type Mode = 'manual' | 'ai_agent';
 
 export default function InitiateCallModal({
   contactName, contactPhone, contactId, agentId, onClose, onCallStarted,
@@ -28,10 +41,16 @@ export default function InitiateCallModal({
   const [selectedFrom, setSelectedFrom] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [resolvedAgentId] = useState<string | undefined>(agentId);
 
-  // Rep phone (profile.phone) — required for /api/calls/human.
-  // If NULL, we block "Start Call" and tell the user to set it in Settings.
+  // Mode: manual (human call via /api/calls/human) or ai_agent (AI via /api/calls/trigger).
+  // If parent passes agentId, we lock into AI mode for backward compatibility.
+  const [mode, setMode] = useState<Mode>(agentId ? 'ai_agent' : 'manual');
+
+  // Agents list for AI mode
+  const [agents, setAgents] = useState<AgentRow[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(agentId);
+
+  // Rep phone (profile.phone) — required for manual mode
   const [repPhone, setRepPhone] = useState<string | null>(null);
   const [repPhoneLoading, setRepPhoneLoading] = useState(true);
 
@@ -41,17 +60,29 @@ export default function InitiateCallModal({
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user || cancelled) { setRepPhoneLoading(false); return; }
-      const { data } = await supabase
-        .from('profiles')
-        .select('phone')
-        .eq('id', user.id)
-        .single();
+
+      const [{ data: profile }, { data: agentRows }] = await Promise.all([
+        supabase.from('profiles').select('phone, organization_id').eq('id', user.id).single(),
+        supabase
+          .from('ai_agents')
+          .select('id, name, status')
+          .eq('status', 'active')
+          .order('created_at', { ascending: true }),
+      ]);
       if (cancelled) return;
-      const phone = (data as { phone?: string | null } | null)?.phone ?? null;
+
+      const phone = (profile as { phone?: string | null } | null)?.phone ?? null;
       setRepPhone(phone && phone.trim() ? phone : null);
       setRepPhoneLoading(false);
+
+      const list = (agentRows ?? []) as AgentRow[];
+      setAgents(list);
+      if (!selectedAgentId && list.length > 0) {
+        setSelectedAgentId(list[0].id);
+      }
     })();
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -69,20 +100,23 @@ export default function InitiateCallModal({
       .catch(() => setError('Could not load phone numbers'));
   }, []);
 
-  const isHumanCall = !resolvedAgentId;
-  const canStart = isHumanCall ? !!repPhone : true;
+  const canStart =
+    mode === 'manual'
+      ? !!repPhone && !!selectedFrom
+      : !!selectedAgentId && !!selectedFrom;
 
   const handleCall = async () => {
     if (!selectedFrom) return;
-    if (isHumanCall && !repPhone) return;
+    if (mode === 'manual' && !repPhone) return;
+    if (mode === 'ai_agent' && !selectedAgentId) return;
     setLoading(true);
     setError('');
     try {
-      const endpoint = isHumanCall ? '/api/calls/human' : '/api/calls/agent';
+      const endpoint = mode === 'manual' ? '/api/calls/human' : '/api/calls/trigger';
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(isHumanCall ? {
+        body: JSON.stringify(mode === 'manual' ? {
           contactId,
           contactPhone,
           fromNumber: selectedFrom,
@@ -90,7 +124,7 @@ export default function InitiateCallModal({
           contactId,
           contactPhone,
           fromNumber: selectedFrom,
-          agentId: resolvedAgentId,
+          agentId: selectedAgentId,
         }),
       });
       const data = await res.json() as { callRecordId?: string; error?: string };
@@ -120,6 +154,34 @@ export default function InitiateCallModal({
           <p className="text-indigo-400 text-sm font-mono">{contactPhone}</p>
         </div>
 
+        {/* Mode selector — hidden if parent locked in an agent */}
+        {!agentId && (
+          <div className="mb-4 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setMode('manual')}
+              className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
+                mode === 'manual'
+                  ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-300'
+                  : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <UserIcon size={14} /> Manual Call
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('ai_agent')}
+              className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
+                mode === 'ai_agent'
+                  ? 'border-indigo-500/50 bg-indigo-500/10 text-indigo-300'
+                  : 'border-zinc-700 bg-zinc-800 text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <Bot size={14} /> AI Agent
+            </button>
+          </div>
+        )}
+
         <div className="mb-4">
           <label className="text-zinc-400 text-xs mb-2 block">Call from (caller ID)</label>
           {phoneNumbers.length === 0 ? (
@@ -145,8 +207,33 @@ export default function InitiateCallModal({
           )}
         </div>
 
-        {/* Rep phone confirmation (human-call path only) */}
-        {isHumanCall && (
+        {/* AI-mode: agent dropdown */}
+        {mode === 'ai_agent' && (
+          <div className="mb-4">
+            <label className="text-zinc-400 text-xs mb-2 block">AI Agent</label>
+            {agents.length === 0 ? (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-xs text-amber-200">
+                No active AI agents.{' '}
+                <Link href="/ai-agents" onClick={onClose} className="underline hover:text-amber-100">
+                  Create one →
+                </Link>
+              </div>
+            ) : (
+              <select
+                value={selectedAgentId ?? ''}
+                onChange={e => setSelectedAgentId(e.target.value)}
+                className="w-full bg-zinc-800 border border-zinc-700 text-white rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                {agents.map(a => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
+
+        {/* Manual-mode: rep phone confirmation */}
+        {mode === 'manual' && (
           <div className="mb-4">
             {repPhoneLoading ? (
               <div className="flex items-center gap-2 text-zinc-500 text-xs">
@@ -183,7 +270,7 @@ export default function InitiateCallModal({
 
         <button
           onClick={handleCall}
-          disabled={loading || !selectedFrom || !canStart}
+          disabled={loading || !canStart}
           className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
         >
           {loading ? (

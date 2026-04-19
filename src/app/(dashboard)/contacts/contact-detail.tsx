@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   X, Edit2, Trash2, Phone, Mail, Building2, MapPin,
-  PhoneCall, MessageSquare, Target, User, Loader2, Bot, Headphones,
+  MessageSquare, Target, User, Loader2, Headphones,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { deleteContact } from "@/hooks/use-contacts";
 import type { Contact } from "@/types/database";
+import InitiateCallModal from "@/components/calls/InitiateCallModal";
 
 interface Props {
   contact: Contact;
@@ -151,83 +152,8 @@ function ContactActivityTimeline({ contact }: { contact: Contact }) {
 export function ContactDetail({ contact, onClose, onEdit, onDeleted }: Props) {
   const name = [contact.first_name, contact.last_name].filter(Boolean).join(" ") || "Unnamed";
   const initials = ((contact.first_name?.[0] || "") + (contact.last_name?.[0] || "")).toUpperCase() || "?";
-  const [calling, setCalling] = useState(false);
+  const [showCallModal, setShowCallModal] = useState(false);
   const [callMsg, setCallMsg] = useState<string | null>(null);
-
-  // Resolve the org's first active phone number + default agent once so both
-  // AI-Call and Human-Call buttons can use them without re-querying every time.
-  const [fromNumber, setFromNumber] = useState<string | null>(null);
-  const [defaultAgentId, setDefaultAgentId] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data: profile } = await supabase
-        .from("profiles").select("organization_id").eq("id", user.id).single();
-      if (!profile?.organization_id) return;
-
-      const [{ data: phoneRow }, { data: agentRow }] = await Promise.all([
-        supabase
-          .from("phone_numbers")
-          .select("number")
-          .eq("organization_id", profile.organization_id)
-          .eq("status", "active")
-          .order("created_at", { ascending: true })
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from("ai_agents")
-          .select("id")
-          .eq("organization_id", profile.organization_id)
-          .eq("status", "active")
-          .order("created_at", { ascending: true })
-          .limit(1)
-          .maybeSingle(),
-      ]);
-      if (cancelled) return;
-      setFromNumber((phoneRow as { number?: string } | null)?.number ?? null);
-      setDefaultAgentId((agentRow as { id?: string } | null)?.id ?? null);
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  const triggerAICall = async () => {
-    if (!contact.phone) return;
-    if (!fromNumber) {
-      setCallMsg("No active phone number yet — add one in Phone Numbers.");
-      setTimeout(() => setCallMsg(null), 6000);
-      return;
-    }
-    if (!defaultAgentId) {
-      setCallMsg("No active AI agent yet — build one in AI Agents first.");
-      setTimeout(() => setCallMsg(null), 6000);
-      return;
-    }
-    setCalling(true);
-    setCallMsg(null);
-    try {
-      const res = await fetch("/api/calls/trigger", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contactId: contact.id,
-          contactPhone: contact.phone,
-          fromNumber,
-          agentId: defaultAgentId,
-        }),
-      });
-      const data = await res.json();
-      setCallMsg(res.ok ? "✓ AI call initiated" : (data.error || "Call failed"));
-    } catch {
-      setCallMsg("Failed to trigger call");
-    } finally {
-      setCalling(false);
-      setTimeout(() => setCallMsg(null), 5000);
-    }
-  };
 
   const handleDelete = async () => {
     if (!confirm("Delete this contact permanently?")) return;
@@ -283,21 +209,21 @@ export function ContactDetail({ contact, onClose, onEdit, onDeleted }: Props) {
           )}
           <div className="grid grid-cols-4 gap-2">
             {contact.phone && (
-              <button onClick={triggerAICall} disabled={calling}
-                title="Have your AI agent call this contact"
-                className="flex flex-col items-center gap-1 rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-3 text-indigo-400 hover:bg-indigo-500/20 disabled:opacity-50">
-                {calling ? <Loader2 className="h-5 w-5 animate-spin" /> : <Bot className="h-5 w-5" />}
-                <span className="text-xs">{calling ? "Calling…" : "AI Call"}</span>
+              <button onClick={() => setShowCallModal(true)}
+                title="Call this contact (manual or AI agent — choose inside)"
+                className="flex flex-col items-center gap-1 rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-3 text-indigo-400 hover:bg-indigo-500/20">
+                <Phone className="h-5 w-5" />
+                <span className="text-xs">Call</span>
               </button>
             )}
             {contact.phone && (
               <Link
                 href={`/calls/human?contactId=${contact.id}`}
-                title="Dial this contact yourself using your browser"
+                title="Dial this contact yourself using your browser (WebRTC softphone)"
                 className="flex flex-col items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-emerald-400 hover:bg-emerald-500/20"
               >
                 <Headphones className="h-5 w-5" />
-                <span className="text-xs">Call (You)</span>
+                <span className="text-xs">Softphone</span>
               </Link>
             )}
             {contact.email && (
@@ -309,6 +235,20 @@ export function ContactDetail({ contact, onClose, onEdit, onDeleted }: Props) {
               <MessageSquare className="h-5 w-5" /><span className="text-xs">SMS</span>
             </button>
           </div>
+
+          {showCallModal && contact.phone && (
+            <InitiateCallModal
+              contactName={name}
+              contactPhone={contact.phone}
+              contactId={contact.id}
+              onClose={() => setShowCallModal(false)}
+              onCallStarted={() => {
+                setShowCallModal(false);
+                setCallMsg("✓ Call initiated");
+                setTimeout(() => setCallMsg(null), 5000);
+              }}
+            />
+          )}
 
           {/* Contact Info */}
           <div className="space-y-3">
