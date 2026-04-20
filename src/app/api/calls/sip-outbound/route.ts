@@ -67,18 +67,30 @@ export async function POST(req: NextRequest) {
     const orgId = profile.organization_id as string;
 
     // ── 3. Parse body ─────────────────────────────────────────
-    let body: { agentId?: string; contactId?: string; campaignId?: string } = {};
+    // Accept EITHER contactId (normal contact call) OR contactPhone
+    // (test-call from the agent edit page, no DB contact row). Matches
+    // /api/calls/trigger which also supports isTest:true with raw phone.
+    let body: {
+      agentId?: string;
+      contactId?: string;
+      contactPhone?: string;
+      campaignId?: string;
+      isTest?: boolean;
+    } = {};
     try {
       body = await req.json();
     } catch {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
-    const { agentId, contactId } = body;
+    const { agentId, contactId, contactPhone: rawContactPhone, isTest } = body;
     if (!agentId) {
       return NextResponse.json({ error: "agentId is required" }, { status: 400 });
     }
-    if (!contactId) {
-      return NextResponse.json({ error: "contactId is required" }, { status: 400 });
+    if (!contactId && !rawContactPhone) {
+      return NextResponse.json(
+        { error: "contactId or contactPhone is required" },
+        { status: 400 },
+      );
     }
 
     // ── 4. Load agent (must belong to org) ────────────────────
@@ -100,30 +112,47 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Agent not found" }, { status: 404 });
     }
 
-    // ── 5. Load contact (must belong to org, must have phone) ─
-    const { data: contact, error: contactErr } = await supabaseAdmin
-      .from("contacts")
-      .select(
-        "id, organization_id, first_name, last_name, phone, email, " +
-        "lender_name, state, city",
-      )
-      .eq("id", contactId)
-      .single();
+    // ── 5. Resolve contact — either by ID (from contacts) or raw phone ──
+    type ContactRow = Record<string, unknown> | null;
+    let c: ContactRow = null;
+    let contactPhone: string;
 
-    if (contactErr || !contact) {
-      console.error("[sip-outbound] contact lookup failed:", contactErr?.message);
-      return NextResponse.json({ error: "Contact not found" }, { status: 404 });
-    }
-    const c = contact as unknown as Record<string, unknown>;
-    if (c.organization_id !== orgId) {
-      return NextResponse.json({ error: "Contact not found" }, { status: 404 });
-    }
-    const contactPhone = c.phone as string | null;
-    if (!contactPhone) {
-      return NextResponse.json(
-        { error: "Contact has no phone number" },
-        { status: 400 },
-      );
+    if (contactId) {
+      const { data: contact, error: contactErr } = await supabaseAdmin
+        .from("contacts")
+        .select(
+          "id, organization_id, first_name, last_name, phone, email, " +
+          "lender_name, state, city",
+        )
+        .eq("id", contactId)
+        .single();
+
+      if (contactErr || !contact) {
+        console.error("[sip-outbound] contact lookup failed:", contactErr?.message);
+        return NextResponse.json({ error: "Contact not found" }, { status: 404 });
+      }
+      c = contact as unknown as Record<string, unknown>;
+      if (c.organization_id !== orgId) {
+        return NextResponse.json({ error: "Contact not found" }, { status: 404 });
+      }
+      const phone = c.phone as string | null;
+      if (!phone) {
+        return NextResponse.json(
+          { error: "Contact has no phone number" },
+          { status: 400 },
+        );
+      }
+      contactPhone = phone;
+    } else {
+      // Test-call path — raw phone, no contact row. Template vars fall
+      // back to "there" / "our team" via substituteVariables.
+      contactPhone = rawContactPhone!.trim();
+      if (!contactPhone) {
+        return NextResponse.json(
+          { error: "contactPhone cannot be empty" },
+          { status: 400 },
+        );
+      }
     }
 
     // ── 6. Build agentConfig with template substitution ───────
@@ -134,15 +163,17 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     const promptCtx: PromptVarContext = {
-      contact: {
-        first_name: c.first_name as string | null,
-        last_name: c.last_name as string | null,
-        phone: c.phone as string | null,
-        email: c.email as string | null,
-        lender_name: c.lender_name as string | null,
-        state: c.state as string | null,
-        city: c.city as string | null,
-      },
+      contact: c
+        ? {
+            first_name: c.first_name as string | null,
+            last_name: c.last_name as string | null,
+            phone: c.phone as string | null,
+            email: c.email as string | null,
+            lender_name: c.lender_name as string | null,
+            state: c.state as string | null,
+            city: c.city as string | null,
+          }
+        : null,
       business: orgRow as { name?: string | null } | null,
     };
 
@@ -217,17 +248,21 @@ export async function POST(req: NextRequest) {
 
     // ── 8. Create LiveKit room + dispatch agent ───────────────
     const roomName = `sip-out-${randomUUID()}`;
-    const displayName =
-      `${(c.first_name as string | null) ?? ""} ${(c.last_name as string | null) ?? ""}`
-        .trim() || "Contact";
+    const displayName = c
+      ? `${(c.first_name as string | null) ?? ""} ${(c.last_name as string | null) ?? ""}`
+          .trim() || "Contact"
+      : isTest
+        ? "Test Call"
+        : "Contact";
 
     const metadata = JSON.stringify({
       source: "sip_outbound",
       agentId: a.id,
-      contactId: c.id,
+      contactId: c ? (c.id as string) : null,
       orgId,
       agentConfig,
       fromNumber,
+      isTest: !!isTest,
     });
 
     try {
@@ -271,7 +306,7 @@ export async function POST(req: NextRequest) {
         trunkId: outboundTrunkId,
         toNumber: contactPhone,
         roomName,
-        participantIdentity: `caller-${c.id}`,
+        participantIdentity: c ? `caller-${c.id as string}` : `test-${randomUUID()}`,
         participantName: displayName,
         krispEnabled: true,
       });
@@ -287,12 +322,15 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 10. Insert calls row (matches WebRTC shape) ───────────
+    // contact_id is explicit null for test-call path, same pattern as
+    // /api/calls/trigger and /api/webrtc/create-call use for no-contact
+    // calls. The column is nullable.
     const { data: callRecord, error: callErr } = await supabaseAdmin
       .from("calls")
       .insert({
         organization_id: orgId,
         ai_agent_id: a.id,
-        contact_id: c.id,
+        contact_id: c ? (c.id as string) : null,
         direction: "outbound",
         status: "initiated",
         call_type: "webrtc",

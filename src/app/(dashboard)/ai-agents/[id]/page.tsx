@@ -608,14 +608,29 @@ export default function EditAgentPage() {
     setTestCalling(true);
     setTestMsg(null);
     try {
-      const res = await fetch("/api/calls/trigger", {
+      // Feature flag — when NEXT_PUBLIC_USE_LIVEKIT_SIP=true, the test
+      // call goes through the new low-latency LiveKit SIP path. Same
+      // branching logic as InitiateCallModal (commit 43614f5).
+      const useLiveKitSip = process.env.NEXT_PUBLIC_USE_LIVEKIT_SIP === "true";
+      const endpoint = useLiveKitSip ? "/api/calls/sip-outbound" : "/api/calls/trigger";
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ contactPhone: testPhone.trim(), agentId: id, isTest: true }),
       });
-      const data = await res.json() as { callRecordId?: string; error?: string };
-      if (res.ok) setTestMsg({ text: `Calling ${testPhone}... Call ID: ${data.callRecordId}`, ok: true });
-      else setTestMsg({ text: data.error || "Call failed", ok: false });
+      const data = await res.json() as {
+        callRecordId?: string;
+        callId?: string;
+        error?: string;
+        detail?: string;
+      };
+      // SIP route returns { callId }; TeXML returns { callRecordId }.
+      const recordId = data.callRecordId ?? data.callId;
+      if (res.ok && recordId) {
+        setTestMsg({ text: `Calling ${testPhone}... Call ID: ${recordId}`, ok: true });
+      } else {
+        setTestMsg({ text: data.detail || data.error || "Call failed", ok: false });
+      }
     } catch {
       setTestMsg({ text: "Network error", ok: false });
     } finally {
