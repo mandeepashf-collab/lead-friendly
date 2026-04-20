@@ -22,11 +22,11 @@ export default function DashboardLayout({
       <Header />
       <main
         className={cn(
-          "min-h-[calc(100vh-4rem)] transition-all",
+          "min-h-[calc(100vh-4rem)] transition-all min-w-0 overflow-x-hidden",
           isCollapsed ? "ml-16" : "ml-64"
         )}
       >
-        <div className="p-6">{children}</div>
+        <div className="p-6 min-w-0 max-w-full">{children}</div>
       </main>
     </div>
   );

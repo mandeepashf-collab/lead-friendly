@@ -749,17 +749,17 @@ export default function EditAgentPage() {
   const isExtraTab = extraTab !== null;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 min-w-0 max-w-full">
       {/* ── Top Bar ─────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between flex-wrap gap-3 min-w-0">
+        <div className="flex items-center gap-3 min-w-0">
           <button onClick={() => router.push("/ai-agents")}
             className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-white transition-colors">
             <ArrowLeft className="h-4 w-4" />Back
           </button>
           <div className="h-4 w-px bg-zinc-700" />
-          <div>
-            <h1 className="text-xl font-bold text-white">{agent.name}</h1>
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold text-white truncate">{agent.name}</h1>
             <p className="text-zinc-500 text-xs">AI Voice Agent</p>
           </div>
         </div>
@@ -820,9 +820,9 @@ export default function EditAgentPage() {
       {/* TAB 1: AGENT DETAILS                                          */}
       {/* ═══════════════════════════════════════════════════════════════ */}
       {!isExtraTab && wizardTab === "details" && (
-        <div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-6 min-w-0">
           {/* Left: Identity & Voice */}
-          <div className="space-y-5">
+          <div className="space-y-5 min-w-0">
             {/* Identity Section */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-5">
               <div className="flex items-center gap-2 mb-1">
@@ -830,8 +830,8 @@ export default function EditAgentPage() {
                 <h2 className="text-base font-semibold text-white">Agent Identity</h2>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 min-w-0">
+                <div className="min-w-0">
                   <label className="text-xs text-zinc-500 mb-1.5 block">Agent Name</label>
                   <input value={form.name} onChange={e => set("name")(e.target.value)}
                     className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
@@ -845,8 +845,8 @@ export default function EditAgentPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 min-w-0">
+                <div className="min-w-0">
                   <label className="text-xs text-zinc-500 mb-1.5 block">Timezone</label>
                   <select value={form.timezone} onChange={e => set("timezone")(e.target.value)}
                     className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
@@ -1163,9 +1163,9 @@ export default function EditAgentPage() {
             )}
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-6">
+          <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-6 min-w-0">
             {/* Left: Prompt / Knowledge Base */}
-            <div className="space-y-5">
+            <div className="space-y-5 min-w-0">
               {/* Knowledge Base */}
               <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
                 <div className="flex items-center gap-2 mb-3">
@@ -1558,9 +1558,9 @@ export default function EditAgentPage() {
       {/* TAB 3: PHONE & TEST                                           */}
       {/* ═══════════════════════════════════════════════════════════════ */}
       {!isExtraTab && wizardTab === "phone" && (
-        <div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-6 min-w-0">
           {/* Left: Phone numbers + test history */}
-          <div className="space-y-5">
+          <div className="space-y-5 min-w-0">
             {/* Phone Number Assignment */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4">
               <div className="flex items-center gap-2 mb-1">
