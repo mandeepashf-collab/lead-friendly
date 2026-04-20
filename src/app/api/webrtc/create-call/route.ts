@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { createRoom, createAccessToken, dispatchAgent, getLiveKitUrl } from "@/lib/livekit/server";
+import { substituteVariables, type PromptVarContext } from "@/lib/prompt-vars";
 
 /**
  * POST /api/webrtc/create-call
@@ -103,6 +104,34 @@ export async function POST(req: NextRequest) {
 
     const settings = (a.settings ?? {}) as Record<string, unknown>;
 
+    // ── 1b. Fetch contact + business for template variable substitution ──
+    // Without this, agents speak literal "{{contact.first_name}}" instead
+    // of the caller's name. Fallbacks in substituteVariables() keep
+    // WebRTC test calls (no contactId) sounding natural.
+    const [contactRes, orgRes] = await Promise.all([
+      contactId
+        ? supabaseAdmin
+            .from("contacts")
+            .select("first_name, last_name, phone, email, lender_name, state, city")
+            .eq("id", contactId)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      supabaseAdmin
+        .from("organizations")
+        .select("name")
+        .eq("id", a.organization_id as string)
+        .maybeSingle(),
+    ]);
+
+    const promptCtx: PromptVarContext = {
+      contact: (contactRes.data as PromptVarContext["contact"]) ?? null,
+      business: (orgRes.data as PromptVarContext["business"]) ?? null,
+    };
+
+    const rawSystemPrompt = (a.system_prompt as string) ?? "";
+    const rawGreeting =
+      (a.greeting_message as string) ?? `Hi, this is ${a.name}. How can I help you?`;
+
     // ── 2. Build room metadata (agent worker reads this) ───────
     const roomName = `call_${agentId}_${Date.now()}`;
 
@@ -110,12 +139,12 @@ export async function POST(req: NextRequest) {
       agentId: a.id as string,
       organizationId: a.organization_id as string,
       name: (a.name as string) || "Assistant",
-      systemPrompt: (a.system_prompt as string) ?? "",
+      systemPrompt: substituteVariables(rawSystemPrompt, promptCtx),
       inboundPrompt: (a.inbound_prompt as string) ?? null,
       inboundGreeting: (a.inbound_greeting as string) ?? null,
       outboundPrompt: (a.outbound_prompt as string) ?? null,
       outboundGreeting: (a.outbound_greeting as string) ?? null,
-      greeting: (a.greeting_message as string) ?? `Hi, this is ${a.name}. How can I help you?`,
+      greeting: substituteVariables(rawGreeting, promptCtx),
       voiceId: (a.voice_id as string) ?? "21m00Tcm4TlvDq8ikWAM",
       voiceSpeed: (a.voice_speed as number) ?? 1.0,
       voiceStability: (settings.voice_stability as number) ?? 0.5,
