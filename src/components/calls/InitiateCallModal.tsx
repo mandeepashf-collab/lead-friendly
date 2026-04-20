@@ -105,6 +105,12 @@ export default function InitiateCallModal({
       ? !!repPhone && !!selectedFrom
       : !!selectedAgentId && !!selectedFrom;
 
+  // Feature flag — when NEXT_PUBLIC_USE_LIVEKIT_SIP=true, AI Agent calls
+  // route to the new SIP outbound path (/api/calls/sip-outbound) instead
+  // of the legacy Telnyx TeXML path (/api/calls/trigger). Flag read once
+  // at render so it's stable for the lifetime of the modal.
+  const useLiveKitSip = process.env.NEXT_PUBLIC_USE_LIVEKIT_SIP === 'true';
+
   const handleCall = async () => {
     if (!selectedFrom) return;
     if (mode === 'manual' && !repPhone) return;
@@ -112,26 +118,41 @@ export default function InitiateCallModal({
     setLoading(true);
     setError('');
     try {
-      const endpoint = mode === 'manual' ? '/api/calls/human' : '/api/calls/trigger';
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mode === 'manual' ? {
-          contactId,
-          contactPhone,
-          fromNumber: selectedFrom,
-        } : {
+      let endpoint: string;
+      let payload: Record<string, unknown>;
+
+      if (mode === 'manual') {
+        endpoint = '/api/calls/human';
+        payload = { contactId, contactPhone, fromNumber: selectedFrom };
+      } else if (useLiveKitSip) {
+        // New SIP path. Server picks the from-number via number-pool
+        // rotation, so we don't send fromNumber. contactPhone is likewise
+        // resolved server-side from contactId.
+        endpoint = '/api/calls/sip-outbound';
+        payload = { agentId: selectedAgentId, contactId };
+      } else {
+        // Legacy Telnyx TeXML path (still primary until cutover).
+        endpoint = '/api/calls/trigger';
+        payload = {
           contactId,
           contactPhone,
           fromNumber: selectedFrom,
           agentId: selectedAgentId,
-        }),
+        };
+      }
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
       const data = await res.json() as {
         callRecordId?: string;
+        callId?: string;
         error?: string;
         message?: string;
         code?: string;
+        detail?: string;
       };
       if (!res.ok) {
         // SELF_CALL_BLOCKED: stay on the modal so user can adjust settings
@@ -139,9 +160,13 @@ export default function InitiateCallModal({
           setError(data.message || "Can't call yourself. Pick a different rep phone in Settings, or test with a different contact.");
           return;
         }
-        throw new Error(data.message || data.error || 'Call failed');
+        throw new Error(data.detail || data.message || data.error || 'Call failed');
       }
-      onCallStarted(data.callRecordId!);
+      // /api/calls/sip-outbound returns { callId }; /api/calls/trigger
+      // and /api/calls/human return { callRecordId }. Accept either.
+      const recordId = data.callRecordId ?? data.callId;
+      if (!recordId) throw new Error('Call started but no call ID returned');
+      onCallStarted(recordId);
       onClose();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Call failed');
