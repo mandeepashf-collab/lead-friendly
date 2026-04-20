@@ -310,8 +310,6 @@ function SentimentBadge({ sentiment }: { sentiment: string | null }) {
 }
 
 function CallLogsTab() {
-  // eslint-disable-next-line no-console
-  console.log("[CallLogsTab] mounted");
   const [search, setSearch] = useState("");
   const [direction, setDirection] = useState<"all" | "inbound" | "outbound">("all");
   const [selectedCall, setSelectedCall] = useState<CallWithContact | null>(null);

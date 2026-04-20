@@ -33,9 +33,6 @@ export function useCalls(options: UseCallsOptions = {}) {
     setError(null);
     const supabase = createClient();
 
-    // eslint-disable-next-line no-console
-    console.log("[useCalls] fetchCalls firing", { direction, offset, limit });
-
     // LEFT JOIN on contacts only. Dropped `ai_agents!left(name)` — if
     // PostgREST can't resolve the FK (ai_agent_id -> ai_agents.id) on the
     // nullable column, the whole embed errors and all rows disappear.
@@ -61,13 +58,6 @@ export function useCalls(options: UseCallsOptions = {}) {
     }
 
     const { data, error: fetchError, count: totalCount } = await q;
-
-    // eslint-disable-next-line no-console
-    console.log("[useCalls] result", {
-      rows: data?.length ?? 0,
-      totalCount,
-      err: fetchError?.message,
-    });
 
     if (fetchError) {
       setError(fetchError.message);
