@@ -33,14 +33,18 @@ export function useCalls(options: UseCallsOptions = {}) {
     setError(null);
     const supabase = createClient();
 
-    // LEFT JOIN on contacts (and ai_agents) so rows with NULL contact_id —
-    // like WebRTC test calls — still appear. The `!left` hint forces the
-    // left join; without it, the earlier `contacts:resolved_contact_id(...)`
-    // syntax was malformed and dropped all rows.
+    // eslint-disable-next-line no-console
+    console.log("[useCalls] fetchCalls firing", { direction, offset, limit });
+
+    // LEFT JOIN on contacts only. Dropped `ai_agents!left(name)` — if
+    // PostgREST can't resolve the FK (ai_agent_id -> ai_agents.id) on the
+    // nullable column, the whole embed errors and all rows disappear.
+    // The display helper falls back to call_type/phone number when the
+    // agent name isn't embedded.
     let q = supabase
       .from("calls")
       .select(
-        "*, contacts!left(first_name, last_name), ai_agents!left(name)",
+        "*, contacts!left(first_name, last_name)",
         { count: "exact" },
       )
       .order("created_at", { ascending: false })
@@ -57,6 +61,13 @@ export function useCalls(options: UseCallsOptions = {}) {
     }
 
     const { data, error: fetchError, count: totalCount } = await q;
+
+    // eslint-disable-next-line no-console
+    console.log("[useCalls] result", {
+      rows: data?.length ?? 0,
+      totalCount,
+      err: fetchError?.message,
+    });
 
     if (fetchError) {
       setError(fetchError.message);

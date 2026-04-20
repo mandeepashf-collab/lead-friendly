@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { Users, MessageSquare, Phone, Hash } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -309,6 +310,8 @@ function SentimentBadge({ sentiment }: { sentiment: string | null }) {
 }
 
 function CallLogsTab() {
+  // eslint-disable-next-line no-console
+  console.log("[CallLogsTab] mounted");
   const [search, setSearch] = useState("");
   const [direction, setDirection] = useState<"all" | "inbound" | "outbound">("all");
   const [selectedCall, setSelectedCall] = useState<CallWithContact | null>(null);
@@ -831,7 +834,9 @@ const TABS = [
 type TabId = typeof TABS[number]["id"];
 
 export default function PeoplePage() {
-  const [tab, setTab] = useState<TabId>("contacts");
+  const searchParams = useSearchParams();
+  const initialTab = (TABS.find((t) => t.id === searchParams.get("tab"))?.id) as TabId | undefined;
+  const [tab, setTab] = useState<TabId>(initialTab ?? "contacts");
 
   return (
     <div className="space-y-6">
