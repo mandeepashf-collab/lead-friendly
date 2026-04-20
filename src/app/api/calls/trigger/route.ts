@@ -76,6 +76,17 @@ export async function POST(request: NextRequest) {
     orgId = profile.organization_id;
   }
 
+  // Deprecation signal — once USE_LIVEKIT_SIP=true, AI calls should be
+  // routing to /api/calls/sip-outbound from the client. Anything still
+  // hitting this route is a missed migration point. Don't block — just log.
+  if (process.env.USE_LIVEKIT_SIP === "true") {
+    console.warn(
+      "[deprecated] /api/calls/trigger called while USE_LIVEKIT_SIP=true. " +
+        "Client should route to /api/calls/sip-outbound. " +
+        `org=${orgId} agent=${agentId}`,
+    );
+  }
+
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('SUPABASE_SERVICE_ROLE_KEY not set');
     return NextResponse.json({ error: 'Server config error: SUPABASE_SERVICE_ROLE_KEY missing' }, { status: 500 });
