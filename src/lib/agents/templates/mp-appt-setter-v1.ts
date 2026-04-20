@@ -468,4 +468,99 @@ export const mpApptSetterV1: AgentTemplate = {
   objections: OBJECTIONS,
 };
 
+// ---------------------------------------------------------------------------
+// BRANDON_TEMPLATE — flat object shaped like a row in public.ai_agents.
+//
+// This is the shape the Supabase trigger (see 012_brandon_default_agent.sql)
+// and the TypeScript fallback in src/lib/agents/defaults.ts should insert
+// when a new organization is created. Keeping it as a plain object makes
+// it easy for either the server-side seeder or a signup handler to spread
+// into an `insert().select()` call.
+//
+// Column names verified against existing migrations (001, 005, 006) and
+// the SELECT list in src/app/api/webrtc/create-call/route.ts (lines 82–87).
+// ---------------------------------------------------------------------------
+
+export interface BrandonTemplateRow {
+  // Identity
+  name: string;
+  status: "active" | "draft";
+  // Voice / TTS
+  voice_id: string;
+  voice_speed: number;
+  // Prompting
+  system_prompt: string;
+  greeting_message: string;
+  outbound_prompt: string;
+  outbound_greeting: string;
+  inbound_prompt: string | null;
+  inbound_greeting: string | null;
+  // Personality / role
+  personality: string;
+  role: string;
+  company_name: string | null;
+  // Call limits & routing
+  max_duration_mins: number;
+  max_call_duration: number;
+  transfer_number: string | null;
+  // Compliance / knowledge
+  dnc_phrases: string;
+  objection_handling: string;
+  knowledge_base: string;
+  closing_script: string;
+  // Settings blob
+  settings: Record<string, unknown>;
+}
+
+const BRANDON_OBJECTIONS_TEXT = OBJECTIONS
+  .map(
+    (o) =>
+      `${o.intentLabel.replace(/_/g, " ")}:\n  Example: "${o.samplePhrases[0]}"\n  Response: ${o.responseTemplate}`
+  )
+  .join("\n\n");
+
+const BRANDON_KNOWLEDGE_BASE = `
+Lead Friendly is a mortgage-protection appointment-setting service. We connect homeowners with licensed insurance agents who can quote term life and mortgage protection policies. Coverage typically ranges from $100K to $750K, with 10-30 year terms. We do not sell policies directly — we book qualified appointments with licensed agents.
+
+Brandon's job on every call:
+- Confirm the lead is the right person.
+- Deliver the mortgage-protection hook tied to their lender.
+- Book a same-day or next-business-day review call with a licensed agent.
+- Never quote prices. Never take payment info. Never disclose he is AI unless sincerely asked.
+`.trim();
+
+const BRANDON_CLOSING_SCRIPT =
+  "Perfect — I've got you scheduled. You'll see a confirmation by text and email. The agent will call you right at that time; should only take about 15 minutes. Thanks so much for your time today, and have a great rest of your day!";
+
+export const BRANDON_TEMPLATE: BrandonTemplateRow = {
+  name: "Brandon",
+  status: "active",
+  voice_id: "21m00Tcm4TlvDq8ikWAM", // ElevenLabs "Rachel" — swap for a male voice once approved
+  voice_speed: 1.0,
+  system_prompt: SYSTEM_PROMPT,
+  greeting_message: GREETING,
+  outbound_prompt: SYSTEM_PROMPT,
+  outbound_greeting: GREETING,
+  inbound_prompt: null,
+  inbound_greeting: null,
+  personality: "warm, professional, consultative",
+  role: "outbound_appt_setter",
+  company_name: null,
+  max_duration_mins: 10,
+  max_call_duration: 15,
+  transfer_number: null,
+  dnc_phrases: "do not call,remove me,take me off your list,stop calling",
+  objection_handling: BRANDON_OBJECTIONS_TEXT,
+  knowledge_base: BRANDON_KNOWLEDGE_BASE,
+  closing_script: BRANDON_CLOSING_SCRIPT,
+  settings: {
+    voice_stability: 0.5,
+    voice_similarity_boost: 0.75,
+    ai_temperature: 0.6,
+    enable_recording: true,
+    is_default_template: true,
+    template_key: "mp_appt_setter_v1",
+  },
+};
+
 export default mpApptSetterV1;
