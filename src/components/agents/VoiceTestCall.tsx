@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { getVoiceName } from "@/lib/voices";
 import { AudioWaveform } from "./AudioWaveform";
 import { CallAnalysis, type AnalysisData } from "./CallAnalysis";
+import { substituteVariables } from "@/lib/prompt-vars";
 
 interface TranscriptEntry {
   role: "user" | "agent";
@@ -23,13 +24,20 @@ interface Props {
   agentName: string;
   systemPrompt: string;
   voiceId?: string;
+  /**
+   * The agent's real greeting (from ai_agents.greeting_message). May contain
+   * template vars like {{contact.first_name}}. Test calls have no contact
+   * context, so substituteVariables() replaces them with "there" / "our team"
+   * to keep the call sounding natural.
+   */
+  greeting?: string;
 }
 
 const SILENCE_THRESHOLD = 10;    // amplitude below this = silence
 const SILENCE_DURATION = 1800;   // ms of silence before we send audio
 const MIN_RECORDING_MS = 500;    // minimum recording before sending
 
-export function VoiceTestCall({ agentId, agentName, systemPrompt, voiceId }: Props) {
+export function VoiceTestCall({ agentId, agentName, systemPrompt, voiceId, greeting: greetingProp }: Props) {
   const [callActive, setCallActive] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isAgentSpeaking, setIsAgentSpeaking] = useState(false);
@@ -270,7 +278,13 @@ export function VoiceTestCall({ agentId, agentName, systemPrompt, voiceId }: Pro
       setStatus("speaking");
       setIsAgentSpeaking(true);
 
-      const greeting = "Hi! I'm ready to take your call. How can I help you today?";
+      // Use the agent's configured greeting if provided. Test calls have no
+      // contact, so substituteVariables() fills template vars with safe
+      // conversational defaults ("there", "our team"). Final fallback only
+      // fires when the agent has no greeting_message at all.
+      const greeting = greetingProp
+        ? substituteVariables(greetingProp, { contact: null, business: null })
+        : `Hi, this is ${agentName}. How can I help you today?`;
 
       // Synthesize greeting
       try {
