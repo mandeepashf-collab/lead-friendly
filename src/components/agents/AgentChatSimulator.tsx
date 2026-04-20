@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Send, RotateCcw, MessageSquare, Loader2, Phone, PhoneOff, Volume2, Download, Zap } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SUGGESTED_CHAT_MESSAGES } from '@/lib/test-scenarios'
-import { getVoiceName } from '@/lib/voices'
+import { getVoiceName, getVoiceDisplayLabel } from '@/lib/voices'
 import { CallAnalysis, type AnalysisData } from './CallAnalysis'
 
 interface Message {
@@ -216,9 +216,9 @@ export function AgentChatSimulator({ agentId, agentName, systemPrompt, voiceId, 
             {voiceId && (
               <span
                 className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700 truncate"
-                title={`Voice: ${getVoiceName(voiceId)}`}
+                title={`Voice: ${getVoiceDisplayLabel(voiceId)}`}
               >
-                {getVoiceName(voiceId)}
+                {getVoiceDisplayLabel(voiceId)}
               </span>
             )}
             {callStarted && (

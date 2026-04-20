@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Mic, MicOff, Volume2, VolumeX, PhoneOff, Phone, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getVoiceName } from "@/lib/voices";
+import { getVoiceName, getVoiceDisplayLabel } from "@/lib/voices";
 import { AudioWaveform } from "./AudioWaveform";
 import { CallAnalysis, type AnalysisData } from "./CallAnalysis";
 import { substituteVariables } from "@/lib/prompt-vars";
@@ -437,7 +437,7 @@ export function VoiceTestCall({ agentId, agentName, systemPrompt, voiceId, greet
           <div className="text-center">
             <p className="text-sm font-semibold text-white">{agentName}</p>
             {voiceId && (
-              <p className="text-[10px] text-zinc-500 mt-0.5">Voice: <span className="text-zinc-400">{getVoiceName(voiceId)}</span></p>
+              <p className="text-[10px] text-zinc-500 mt-0.5">Voice: <span className="text-zinc-400">{getVoiceDisplayLabel(voiceId)}</span></p>
             )}
             {callActive && (
               <p className="text-xs text-zinc-500 mt-0.5">⏱ {formatDuration(callDuration)}</p>

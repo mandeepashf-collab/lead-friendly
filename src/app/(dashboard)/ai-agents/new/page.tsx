@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createAIAgent } from "@/hooks/use-ai-agents";
-import { getVoiceName, getVoiceMeta } from "@/lib/voices";
+import { getVoiceName, getVoiceMeta, getVoiceDisplayLabel } from "@/lib/voices";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface ElevenLabsVoice {
@@ -1182,7 +1182,7 @@ export default function NewAgentPage() {
                 </div>
                 <div className="flex justify-between py-2 border-b border-zinc-800">
                   <span className="text-zinc-500">Voice</span>
-                  <span className="text-white">{voiceDisplayName}</span>
+                  <span className="text-white">{getVoiceDisplayLabel(form.voice_id) || voiceDisplayName}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b border-zinc-800">
                   <span className="text-zinc-500">Role</span>
@@ -1254,7 +1254,7 @@ export default function NewAgentPage() {
                 <div className="space-y-2 text-xs">
                   <div className="flex justify-between">
                     <span className="text-zinc-500">Voice</span>
-                    <span className="text-white">{voiceDisplayName}</span>
+                    <span className="text-white">{getVoiceDisplayLabel(form.voice_id) || voiceDisplayName}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-zinc-500">Number Pool</span>
