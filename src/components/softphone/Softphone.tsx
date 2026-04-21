@@ -399,7 +399,11 @@ export function Softphone() {
     setDockState("ending");
     setStatusLabel("Ending...");
     const idToHangup = callId;
-    await teardownRoom();
+
+    // Fire server hangup FIRST so deleteRoom() sends SIP BYE to the contact
+    // before we tear down our own connection. If we teardown first, our
+    // participant goes away but the SIP leg stays alive in the room — the
+    // contact keeps hearing silence until their carrier times them out.
     if (idToHangup) {
       try {
         await fetch("/api/softphone/hangup", {
@@ -412,6 +416,12 @@ export function Softphone() {
         console.error("[softphone] hangup post failed:", err);
       }
     }
+
+    // Now tear down our own LiveKit connection. The room is already being
+    // destroyed server-side, but this ensures we release the mic + audio
+    // elements locally regardless.
+    await teardownRoom();
+
     setDockState("idle");
     setStatusLabel("");
     setCallId(null);

@@ -131,28 +131,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // ── Remove rep participant from the LiveKit room ────────
-    // The room is configured with emptyTimeout=0, so removing the last
-    // human participant triggers teardown. The SIP leg will follow via
-    // SIP BYE, and the webhook will write terminal state.
+    // ── End the call by closing the entire room ─────────────
+    // When the rep hangs up from the dock, we need BOTH legs to terminate:
+    //   - Rep's browser (already disconnecting client-side, or will after this)
+    //   - SIP leg to the PSTN contact (must be torn down or the callee stays
+    //     connected to silence until the carrier times them out)
     //
-    // We target the rep's identity specifically rather than deleteRoom()
-    // because deleteRoom bypasses normal participant-disconnect events
-    // and races with webhook state. removeParticipant is the clean path.
-    const repIdentity = `rep_${user.id}`;
+    // Using deleteRoom() is the cleanest way to terminate everyone:
+    //   - All participants disconnect simultaneously
+    //   - SIP bridge sends SIP BYE to Telnyx → contact's call ends immediately
+    //   - room_finished fires on the webhook → DB row flips to completed
+    //
+    // This replaces the earlier removeParticipant(rep) approach which
+    // orphaned the SIP leg and left the callee on silence.
     const room = getRoomService();
 
     try {
-      await room.removeParticipant(roomName, repIdentity);
+      await room.deleteRoom(roomName);
     } catch (removeErr) {
-      // Two plausible errors here, both benign:
-      //   1. Participant already gone (call already ended, race with webhook)
-      //   2. Room already gone (SIP side hung up first, room cleaned up)
-      // In either case, the room_finished webhook has or will fire and
-      // set terminal state. Return 200 idempotently.
+      // Benign if the room is already gone (e.g., contact hung up first
+      // and room_finished already closed it). Return 200 idempotently.
       const msg = removeErr instanceof Error ? removeErr.message : String(removeErr);
       console.log(
-        `[softphone/hangup] removeParticipant returned error for call ${callId} (benign if already gone): ${msg}`,
+        `[softphone/hangup] deleteRoom returned error for call ${callId} (benign if already gone): ${msg}`,
       );
     }
 
