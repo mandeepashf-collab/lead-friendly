@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { decodeClientState } from '@/lib/client-state';
 
 // Use service role for webhook handler — no user session available in Telnyx callbacks
 function getSupabase() {
@@ -19,16 +20,10 @@ export async function POST(request: NextRequest) {
 
   if (!payload) return NextResponse.json({ ok: true });
 
-  // Extract our call record ID from the Telnyx client_state field
-  let callRecordId: string | null = null;
-  try {
-    if (payload.client_state) {
-      const decoded = JSON.parse(
-        Buffer.from(payload.client_state as string, 'base64').toString()
-      ) as { callRecordId?: string };
-      callRecordId = decoded.callRecordId ?? null;
-    }
-  } catch { /* ignore malformed state */ }
+  // Extract our call record ID from the Telnyx client_state field via the
+  // shared, drift-proof decoder in @/lib/client-state.
+  const decoded = decodeClientState(payload.client_state as string | undefined);
+  const callRecordId: string | null = decoded.callRecordId ?? null;
 
   // Machine detection can fire before we have a callRecordId association via client_state,
   // so handle it up here using telnyx_call_id lookup instead.

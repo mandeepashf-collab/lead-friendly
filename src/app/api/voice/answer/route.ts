@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
 import { createTTSToken } from "@/app/api/voice/tts-stream/route";
+import {
+  ClientState as SharedClientState,
+  decodeClientState,
+  encodeClientState,
+  emptyClientState,
+} from "@/lib/client-state";
 
 /**
  * Telnyx voice webhook — single endpoint for ALL call control events.
@@ -86,6 +92,9 @@ async function logWebhookEvent(args: {
 }
 
 // ─── Client State (passed through Telnyx base64) ───────────────
+// Type + encode/decode live in src/lib/client-state.ts so voice/answer and
+// voice/status share the same drift-proof round-trip. Only AgentConfig is
+// kept local — it's refined here beyond the shared module's `unknown`.
 type AgentConfig = {
   voiceId: string;
   maxTurns: number;
@@ -100,90 +109,12 @@ type AgentConfig = {
   enableRecording: boolean;
 };
 
-type ClientState = {
-  callRecordId?: string;
-  contactId?: string | null;
-  agentId?: string | null;
-  organizationId?: string | null;
-  callMode?: "manual" | "ai_agent" | "callback_bridge";
-  conversationHistory: { role: "user" | "assistant"; content: string }[];
-  turnCount: number;
-  emptyGatherStreak?: number;
-  // Agent config snapshot (loaded once on call.answered, then carried forward)
+// Local ClientState intersects the shared type with a refined agentConfig.
+// Assignments from decodeClientState() need one cast at the decode site
+// because the shared module keeps agentConfig as `unknown`.
+type ClientState = Omit<SharedClientState, "agentConfig"> & {
   agentConfig?: AgentConfig;
-  systemPrompt?: string;
-  // Draft agent for test calls from build page
-  draftGreeting?: string;
-  draftSystemPrompt?: string;
-  draftVoiceId?: string;
-  isTestCall?: boolean;
-  // Timing for voicemail detection
-  answeredAt?: number;
-  // Whether transcription is currently active
-  transcribing?: boolean;
-  // Buffer for accumulating partial transcription
-  lastSpeechTimestamp?: number;
-  // Call direction for inbound/outbound script differentiation
-  callDirection?: "inbound" | "outbound";
-  // Pending speak text for playback.failed retry
-  pendingSpeakText?: string;
-  // Circuit breaker: if ElevenLabs playback fails, disable for rest of call
-  elevenLabsDisabled?: boolean;
-  // Count of consecutive rejection/decline utterances — used to auto-tag
-  // `not_interested` once the contact declines twice.
-  declineStreak?: number;
 };
-
-function emptyState(): ClientState {
-  return { conversationHistory: [], turnCount: 0, emptyGatherStreak: 0 };
-}
-
-function decodeState(raw: string | undefined): ClientState {
-  if (!raw) return emptyState();
-  try {
-    const parsed = JSON.parse(Buffer.from(raw, "base64").toString("utf-8"));
-    return {
-      callRecordId: parsed.callRecordId,
-      contactId: parsed.contactId ?? null,
-      agentId: parsed.agentId ?? null,
-      organizationId: parsed.organizationId ?? null,
-      conversationHistory: Array.isArray(parsed.conversationHistory) ? parsed.conversationHistory : [],
-      turnCount: typeof parsed.turnCount === "number" ? parsed.turnCount : 0,
-      emptyGatherStreak: typeof parsed.emptyGatherStreak === "number" ? parsed.emptyGatherStreak : 0,
-      agentConfig: parsed.agentConfig ?? undefined,
-      systemPrompt: parsed.systemPrompt ?? undefined,
-      draftGreeting: typeof parsed.draftGreeting === "string" ? parsed.draftGreeting : undefined,
-      draftSystemPrompt: typeof parsed.draftSystemPrompt === "string" ? parsed.draftSystemPrompt : undefined,
-      draftVoiceId: typeof parsed.draftVoiceId === "string" ? parsed.draftVoiceId : undefined,
-      isTestCall: !!parsed.isTestCall,
-      answeredAt: typeof parsed.answeredAt === "number" ? parsed.answeredAt : undefined,
-      transcribing: !!parsed.transcribing,
-      lastSpeechTimestamp: typeof parsed.lastSpeechTimestamp === "number" ? parsed.lastSpeechTimestamp : undefined,
-      callDirection: parsed.callDirection === "inbound" ? "inbound" : parsed.callDirection === "outbound" ? "outbound" : undefined,
-      pendingSpeakText: typeof parsed.pendingSpeakText === "string" ? parsed.pendingSpeakText : undefined,
-      elevenLabsDisabled: !!parsed.elevenLabsDisabled,
-    };
-  } catch {
-    return emptyState();
-  }
-}
-
-function encodeState(state: ClientState): string {
-  // Trim conversation history to last 12 turns to stay within Telnyx's
-  // ~8KB client_state limit. Earlier turns are summarized in system prompt.
-  const trimmed = { ...state };
-  if (trimmed.conversationHistory.length > 24) {
-    trimmed.conversationHistory = trimmed.conversationHistory.slice(-24);
-  }
-  const encoded = Buffer.from(JSON.stringify(trimmed)).toString("base64");
-  // Safety check: Telnyx has ~8KB limit for client_state
-  if (encoded.length > 7500) {
-    // Emergency trim: keep only last 6 turns
-    trimmed.conversationHistory = trimmed.conversationHistory.slice(-12);
-    return Buffer.from(JSON.stringify(trimmed)).toString("base64");
-  }
-  return encoded;
-}
 
 // ─── Telnyx API Helper ──────────────────────────────────────────
 async function telnyxAction(callControlId: string, action: string, body: Record<string, unknown>) {
@@ -454,7 +385,7 @@ async function speakWithElevenLabs(
 
       const res = await telnyxAction(callControlId, "playback_start", {
         audio_url: audioUrl,
-        client_state: encodeState(state),
+        client_state: encodeClientState(state),
       });
 
       // If Telnyx API accepted the playback_start, we're done
@@ -479,7 +410,7 @@ async function speakWithElevenLabs(
     payload: text,
     voice: "female",
     language: "en-US",
-    client_state: encodeState(state),
+    client_state: encodeClientState(state),
   });
 }
 
@@ -986,7 +917,22 @@ export async function POST(req: NextRequest) {
   }
 
   const rawClientState = payload?.client_state as string | undefined;
-  const state = decodeState(rawClientState);
+  const state = decodeClientState(rawClientState) as ClientState;
+
+  // Diagnostic: catch round-trip regressions early. If Telnyx sends a
+  // non-empty client_state but the decoder drops everything identifiable,
+  // something is wrong and we want to notice on the next call rather than
+  // find out via "AI greets the rep on a Manual Call" again.
+  if (rawClientState && !state.callRecordId && !state.agentId) {
+    console.warn(
+      "[VOICE] decoded state looks empty despite raw client_state being present",
+      {
+        rawLength: rawClientState.length,
+        decodedKeys: Object.keys(state),
+        eventType,
+      },
+    );
+  }
 
   try {
     const direction = payload?.direction as string | undefined;
@@ -1014,7 +960,7 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        await telnyxAction(callControlId, "answer", { client_state: encodeState(state) });
+        await telnyxAction(callControlId, "answer", { client_state: encodeClientState(state) });
       } else {
         state.callDirection = "outbound";
         console.log("[VOICE] Outbound call.initiated — waiting for answered");
@@ -1036,9 +982,7 @@ export async function POST(req: NextRequest) {
 
       // ── CALLBACK BRIDGE (Path A): Rep picked up → now dial the contact ──
       if (state.callMode === "callback_bridge") {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const s = state as any;
-        if (s.legA) {
+        if (state.legA) {
           // Leg A answered: the rep picked up their phone.
           // Tell them we're connecting, then dial the contact (Leg B).
           console.log("[VOICE] Callback bridge: Rep answered (Leg A). Dialing contact...");
@@ -1055,12 +999,25 @@ export async function POST(req: NextRequest) {
             payload: "Connecting you now. Please hold.",
             voice: "female",
             language: "en-US",
-            client_state: encodeState(state),
+            client_state: encodeClientState(state),
           });
 
           // Dial Leg B (the contact) using Telnyx
-          const bridgeTarget = s.bridgeTarget as string;
-          const bridgeFrom = s.bridgeFrom as string;
+          const bridgeTarget = state.bridgeTarget;
+          const bridgeFrom = state.bridgeFrom;
+          if (!bridgeTarget || !bridgeFrom) {
+            console.error(
+              "[VOICE] Callback bridge: missing bridgeTarget/bridgeFrom in state",
+              { bridgeTarget, bridgeFrom },
+            );
+            await telnyxAction(callControlId, "speak", {
+              payload: "Sorry, we couldn't reach the contact. The call will now end.",
+              voice: "female",
+              language: "en-US",
+            });
+            await telnyxAction(callControlId, "hangup", {});
+            return NextResponse.json({ received: true });
+          }
           const legBState = Buffer.from(JSON.stringify({
             callRecordId: state.callRecordId,
             callMode: "callback_bridge",
@@ -1115,7 +1072,7 @@ export async function POST(req: NextRequest) {
           // Leg B answered: the contact picked up.
           // Bridge the two calls together.
           console.log("[VOICE] Callback bridge: Contact answered (Leg B). Bridging...");
-          const legAId = s.legACallControlId as string;
+          const legAId = state.legACallControlId;
 
           if (legAId) {
             await telnyxAction(callControlId, "bridge", {
@@ -1145,7 +1102,7 @@ export async function POST(req: NextRequest) {
           payload: "Hello, please hold while we connect you.",
           voice: "female",
           language: "en-US",
-          client_state: encodeState(state),
+          client_state: encodeClientState(state),
         });
         return NextResponse.json({ received: true });
       }
@@ -1239,7 +1196,7 @@ export async function POST(req: NextRequest) {
           await telnyxAction(callControlId, "record_start", {
             format: "mp3",
             channels: "dual",
-            client_state: encodeState(state),
+            client_state: encodeClientState(state),
           });
           console.log("[VOICE] Call recording started");
         } catch (recErr) {
@@ -1272,7 +1229,7 @@ export async function POST(req: NextRequest) {
         language: "en",
         transcription_engine: "google",
         transcription_tracks: "inbound",
-        client_state: encodeState({ ...state, transcribing: true, lastSpeechTimestamp: Date.now() }),
+        client_state: encodeClientState({ ...state, transcribing: true, lastSpeechTimestamp: Date.now() }),
       });
       return NextResponse.json({ received: true });
     }
@@ -1298,7 +1255,7 @@ export async function POST(req: NextRequest) {
           payload: retryText,
           voice: "female",
           language: "en-US",
-          client_state: encodeState(state),
+          client_state: encodeClientState(state),
         });
       } else {
         // No pending text — just start listening anyway so the call doesn't go silent
@@ -1307,7 +1264,7 @@ export async function POST(req: NextRequest) {
           language: "en",
           transcription_engine: "google",
           transcription_tracks: "inbound",
-          client_state: encodeState({ ...state, transcribing: true, lastSpeechTimestamp: Date.now() }),
+          client_state: encodeClientState({ ...state, transcribing: true, lastSpeechTimestamp: Date.now() }),
         });
       }
       return NextResponse.json({ received: true });
