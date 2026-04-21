@@ -304,8 +304,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       callId,
       roomName,
-      token,
-      wsUrl: getLiveKitUrl(),
+      accessToken: token,
+      serverUrl: getLiveKitUrl(),
       sipParticipantIdentity: sipIdentity,
     });
   } catch (err) {
