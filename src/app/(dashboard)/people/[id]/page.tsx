@@ -14,6 +14,7 @@ import { useContact, updateContact as updateContactApi, deleteContact } from "@/
 import InitiateCallModal from "@/components/calls/InitiateCallModal";
 import ActiveCallPanel from "@/components/calls/ActiveCallPanel";
 import PostCallDisposition from "@/components/calls/PostCallDisposition";
+import { useSoftphone } from "@/components/softphone/SoftphoneContext";
 import type { Call, Conversation, Opportunity } from "@/types/database";
 
 const STATUS_OPTIONS = [
@@ -267,6 +268,7 @@ export default function ContactDetailPage() {
   const router = useRouter();
   const contactId = params.id as string;
   const { contact: rawContact, loading: contactLoading } = useContact(contactId);
+  const { openWith: openSoftphone, isInCall } = useSoftphone();
   // Call modal state
   const [showCallModal, setShowCallModal] = useState(false);
   const [activeCallId, setActiveCallId] = useState<string | null>(null);
@@ -439,8 +441,18 @@ export default function ContactDetailPage() {
 
             {/* Quick actions — above status so dropdown never overlaps them */}
             <div className="flex gap-2 mb-3">
-              <button onClick={() => setShowCallModal(true)}
-                disabled={!contact.phone}
+              <button
+                onClick={() => {
+                  if (!contact.phone) return;
+                  openSoftphone({
+                    id: contact.id,
+                    firstName: contact.first_name ?? null,
+                    lastName: contact.last_name ?? null,
+                    phone: contact.phone,
+                    company: contact.company_name ?? null,
+                  });
+                }}
+                disabled={!contact.phone || isInCall}
                 className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg transition-colors">
                 <Phone size={12} /> Call
               </button>

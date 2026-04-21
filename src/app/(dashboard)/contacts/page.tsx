@@ -28,6 +28,7 @@ import { ContactDetail } from "./contact-detail";
 import { ImportDialog } from "./import-dialog";
 import type { Contact } from "@/types/database";
 import InitiateCallModal from "@/components/calls/InitiateCallModal";
+import { useSoftphone } from "@/components/softphone/SoftphoneContext";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "All", color: "" },
@@ -63,6 +64,7 @@ export default function ContactsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [callModalContact, setCallModalContact] = useState<Contact | null>(null);
   const [callToast, setCallToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  const { openWith: openSoftphone } = useSoftphone();
   const PAGE_SIZE = 25;
 
   const openCallModal = useCallback((contact: Contact) => {
@@ -71,8 +73,14 @@ export default function ContactsPage() {
       setTimeout(() => setCallToast(null), 4000);
       return;
     }
-    setCallModalContact(contact);
-  }, []);
+    openSoftphone({
+      id: contact.id,
+      firstName: contact.first_name ?? null,
+      lastName: contact.last_name ?? null,
+      phone: contact.phone,
+      company: contact.company_name ?? null,
+    });
+  }, [openSoftphone]);
 
   const { contacts, count, loading, refetch } = useContacts({
     search: search || undefined,
