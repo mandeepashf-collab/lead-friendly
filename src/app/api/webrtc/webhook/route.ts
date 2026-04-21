@@ -259,8 +259,18 @@ export async function POST(req: NextRequest) {
         const egressInfo = event.egressInfo;
         if (egressInfo && callRecordId) {
           const fileResults = egressInfo.fileResults ?? [];
-          const recordingUrl =
-            fileResults[0]?.location ?? fileResults[0]?.filename ?? null;
+          // Prefer `filename` (the storage key we set in egress filepath,
+          // e.g. "{org_id}/{call_id}.ogg") over `location` (the full S3
+          // URL). createSignedUrl() requires the storage key, not a URL.
+          const rawPath =
+            fileResults[0]?.filename ?? fileResults[0]?.location ?? null;
+          // Defensive normalization: if we somehow land on a full URL,
+          // strip the bucket prefix so we always end up with a clean key.
+          const recordingUrl = rawPath
+            ? rawPath.includes("/call-recordings/")
+              ? rawPath.split("/call-recordings/")[1].split("?")[0]
+              : rawPath
+            : null;
           const durationNs = fileResults[0]?.duration ?? null;
           const durationSeconds =
             durationNs != null
