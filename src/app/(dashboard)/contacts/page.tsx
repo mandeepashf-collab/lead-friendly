@@ -27,7 +27,6 @@ import { ContactDialog } from "./contact-dialog";
 import { ContactDetail } from "./contact-detail";
 import { ImportDialog } from "./import-dialog";
 import type { Contact } from "@/types/database";
-import InitiateCallModal from "@/components/calls/InitiateCallModal";
 import { useSoftphone } from "@/components/softphone/SoftphoneContext";
 
 const STATUS_OPTIONS = [
@@ -62,7 +61,6 @@ export default function ContactsPage() {
   const [editContact, setEditContact] = useState<Contact | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [callModalContact, setCallModalContact] = useState<Contact | null>(null);
   const [callToast, setCallToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const { openWith: openSoftphone } = useSoftphone();
   const PAGE_SIZE = 25;
@@ -311,19 +309,6 @@ export default function ContactsPage() {
       {showAddDialog && <ContactDialog contact={editContact} onClose={() => { setShowAddDialog(false); setEditContact(null); }} onSaved={() => { setShowAddDialog(false); setEditContact(null); refetch(); }} />}
       {showDetail && selectedContact && <ContactDetail contact={selectedContact} onClose={() => { setShowDetail(false); setSelectedContact(null); }} onEdit={() => { setShowDetail(false); setEditContact(selectedContact); setShowAddDialog(true); }} onDeleted={() => { setShowDetail(false); setSelectedContact(null); refetch(); }} />}
       {showImport && <ImportDialog onClose={() => setShowImport(false)} onImported={() => { setShowImport(false); refetch(); }} />}
-      {callModalContact && callModalContact.phone && (
-        <InitiateCallModal
-          contactName={[callModalContact.first_name, callModalContact.last_name].filter(Boolean).join(" ") || "Unnamed"}
-          contactPhone={callModalContact.phone}
-          contactId={callModalContact.id}
-          onClose={() => setCallModalContact(null)}
-          onCallStarted={() => {
-            setCallModalContact(null);
-            setCallToast({ msg: "✓ Call initiated", ok: true });
-            setTimeout(() => setCallToast(null), 5000);
-          }}
-        />
-      )}
     </div>
   );
 }

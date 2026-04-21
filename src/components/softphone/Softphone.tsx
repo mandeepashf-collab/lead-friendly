@@ -448,12 +448,14 @@ export function Softphone() {
   );
 
   const closeDock = useCallback(() => {
-    if (dockState === "ready" || dockState === "error") {
-      setActiveContact(null);
-      setErrorMsg(null);
-      setDockState("idle");
-      setExpanded(false);
+    // Never close out of an active call state — user must End first
+    if (dockState === "connected" || dockState === "dialing" || dockState === "ending") {
+      return;
     }
+    setActiveContact(null);
+    setErrorMsg(null);
+    setDockState("idle");
+    setExpanded(false);
   }, [dockState]);
 
   // ── Derived ─────────────────────────────────────────────────

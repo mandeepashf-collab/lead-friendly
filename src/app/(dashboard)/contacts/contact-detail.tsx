@@ -4,13 +4,13 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   X, Edit2, Trash2, Phone, Mail, Building2, MapPin,
-  MessageSquare, Target, User, Loader2, Headphones,
+  MessageSquare, Target, User, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { deleteContact } from "@/hooks/use-contacts";
 import type { Contact } from "@/types/database";
-import InitiateCallModal from "@/components/calls/InitiateCallModal";
+import { useSoftphone } from "@/components/softphone/SoftphoneContext";
 
 interface Props {
   contact: Contact;
@@ -152,8 +152,7 @@ function ContactActivityTimeline({ contact }: { contact: Contact }) {
 export function ContactDetail({ contact, onClose, onEdit, onDeleted }: Props) {
   const name = [contact.first_name, contact.last_name].filter(Boolean).join(" ") || "Unnamed";
   const initials = ((contact.first_name?.[0] || "") + (contact.last_name?.[0] || "")).toUpperCase() || "?";
-  const [showCallModal, setShowCallModal] = useState(false);
-  const [callMsg, setCallMsg] = useState<string | null>(null);
+  const { openWith: openSoftphone, isInCall } = useSoftphone();
 
   const handleDelete = async () => {
     if (!confirm("Delete this contact permanently?")) return;
@@ -204,27 +203,25 @@ export function ContactDetail({ contact, onClose, onEdit, onDeleted }: Props) {
           </div>
 
           {/* Quick Actions */}
-          {callMsg && (
-            <p className={`text-xs text-center rounded-lg px-3 py-2 ${callMsg.startsWith("✓") ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>{callMsg}</p>
-          )}
           <div className="grid grid-cols-4 gap-2">
             {contact.phone && (
-              <button onClick={() => setShowCallModal(true)}
-                title="Call this contact (manual or AI agent — choose inside)"
-                className="flex flex-col items-center gap-1 rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-3 text-indigo-400 hover:bg-indigo-500/20">
+              <button
+                onClick={() => {
+                  if (!contact.phone) return;
+                  openSoftphone({
+                    id: contact.id,
+                    firstName: contact.first_name ?? null,
+                    lastName: contact.last_name ?? null,
+                    phone: contact.phone,
+                    company: contact.company_name ?? null,
+                  });
+                }}
+                disabled={!contact.phone || isInCall}
+                title="Call this contact"
+                className="flex flex-col items-center gap-1 rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-3 text-indigo-400 hover:bg-indigo-500/20 disabled:opacity-40 disabled:cursor-not-allowed">
                 <Phone className="h-5 w-5" />
                 <span className="text-xs">Call</span>
               </button>
-            )}
-            {contact.phone && (
-              <Link
-                href={`/calls/human?contactId=${contact.id}`}
-                title="Dial this contact yourself using your browser (WebRTC softphone)"
-                className="flex flex-col items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-emerald-400 hover:bg-emerald-500/20"
-              >
-                <Headphones className="h-5 w-5" />
-                <span className="text-xs">Softphone</span>
-              </Link>
             )}
             {contact.email && (
               <a href={`mailto:${contact.email}`} className="flex flex-col items-center gap-1 rounded-lg border border-zinc-700 bg-zinc-800 p-3 text-zinc-400 hover:bg-zinc-700 hover:text-white">
@@ -235,20 +232,6 @@ export function ContactDetail({ contact, onClose, onEdit, onDeleted }: Props) {
               <MessageSquare className="h-5 w-5" /><span className="text-xs">SMS</span>
             </button>
           </div>
-
-          {showCallModal && contact.phone && (
-            <InitiateCallModal
-              contactName={name}
-              contactPhone={contact.phone}
-              contactId={contact.id}
-              onClose={() => setShowCallModal(false)}
-              onCallStarted={() => {
-                setShowCallModal(false);
-                setCallMsg("✓ Call initiated");
-                setTimeout(() => setCallMsg(null), 5000);
-              }}
-            />
-          )}
 
           {/* Contact Info */}
           <div className="space-y-3">

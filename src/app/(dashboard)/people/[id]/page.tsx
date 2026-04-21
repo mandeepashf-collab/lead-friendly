@@ -11,9 +11,6 @@ import {
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useContact, updateContact as updateContactApi, deleteContact } from "@/hooks/use-contacts";
-import InitiateCallModal from "@/components/calls/InitiateCallModal";
-import ActiveCallPanel from "@/components/calls/ActiveCallPanel";
-import PostCallDisposition from "@/components/calls/PostCallDisposition";
 import { useSoftphone } from "@/components/softphone/SoftphoneContext";
 import type { Call, Conversation, Opportunity } from "@/types/database";
 
@@ -269,12 +266,6 @@ export default function ContactDetailPage() {
   const contactId = params.id as string;
   const { contact: rawContact, loading: contactLoading } = useContact(contactId);
   const { openWith: openSoftphone, isInCall } = useSoftphone();
-  // Call modal state
-  const [showCallModal, setShowCallModal] = useState(false);
-  const [activeCallId, setActiveCallId] = useState<string | null>(null);
-  const [completedCallId, setCompletedCallId] = useState<string | null>(null);
-  const [callDuration, setCallDuration] = useState(0);
-  const [showDisposition, setShowDisposition] = useState(false);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [contact, setContact] = useState<any>(null);
@@ -694,46 +685,6 @@ export default function ContactDetailPage() {
         </div>
       </div>
 
-      {/* ── Call Modals ── */}
-      {showCallModal && (
-        <InitiateCallModal
-          contactName={`${contact.first_name ?? ''} ${contact.last_name ?? ''}`.trim()}
-          contactPhone={contact.phone ?? ''}
-          contactId={contact.id}
-          onClose={() => setShowCallModal(false)}
-          onCallStarted={(callRecordId) => {
-            setActiveCallId(callRecordId);
-            setCallDuration(0);
-            setShowCallModal(false);
-          }}
-        />
-      )}
-
-      {activeCallId && (
-        <ActiveCallPanel
-          callRecordId={activeCallId}
-          contactName={`${contact.first_name ?? ''} ${contact.last_name ?? ''}`.trim()}
-          contactPhone={contact?.phone ?? ''}
-          onCallEnded={(duration) => {
-            setCallDuration(duration ?? 0);
-            setCompletedCallId(activeCallId);
-            setActiveCallId(null);
-            setShowDisposition(true);
-          }}
-        />
-      )}
-
-      {showDisposition && (
-        <PostCallDisposition
-          callRecordId={completedCallId ?? ''}
-          contactName={`${contact.first_name ?? ''} ${contact.last_name ?? ''}`.trim()}
-          duration={callDuration}
-          onDone={() => {
-            setShowDisposition(false);
-            router.refresh();
-          }}
-        />
-      )}
     </div>
   );
 }
