@@ -3,7 +3,8 @@ import { randomUUID } from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { createRoom, dispatchAgent } from "@/lib/livekit/server";
+import { createRoom, deleteRoom, dispatchAgent } from "@/lib/livekit/server";
+import { buildCallRecordingEgress } from "@/lib/livekit/egress";
 import { createSipParticipant } from "@/lib/livekit/sip";
 import { substituteVariables, type PromptVarContext } from "@/lib/prompt-vars";
 
@@ -14,14 +15,21 @@ import { substituteVariables, type PromptVarContext } from "@/lib/prompt-vars";
  * round-trip (10-13s latency) with the same low-latency LiveKit pipeline
  * that powers WebRTC calls (~1-2s turn time).
  *
- * Flow:
+ * Flow (Stage C refactor, Apr 22):
  *   1. Auth user → resolve org_id
  *   2. Feature flag gate (USE_LIVEKIT_SIP must be "true")
  *   3. Load agent + contact (both must belong to org, contact must have phone)
  *   4. Build agentConfig with template variables substituted
  *   5. Pick a from-number via number-pool rotation
- *   6. createRoom + dispatchAgent + createSipParticipant
- *   7. Insert calls row, return { callId, roomName }
+ *   6. Insert calls row FIRST so callId is available for room metadata + egress filepath
+ *   7. createRoom + dispatchAgent + createSipParticipant — each with cleanup-on-fail
+ *   8. Return { callId, roomName }
+ *
+ * Why calls row first (changed Apr 22):
+ *   - Egress filepath is "{orgId}/{callId}.ogg" — can't compute without callId
+ *   - Room metadata includes callRecordId — webhook uses it to resolve the call
+ *     for egress_ended, participant_joined, etc. Previously the webhook fell
+ *     back to livekit_room_id lookup, which worked but was brittle.
  *
  * TeXML path at /api/calls/trigger remains alive for rollback.
  */
@@ -67,9 +75,6 @@ export async function POST(req: NextRequest) {
     const orgId = profile.organization_id as string;
 
     // ── 3. Parse body ─────────────────────────────────────────
-    // Accept EITHER contactId (normal contact call) OR contactPhone
-    // (test-call from the agent edit page, no DB contact row). Matches
-    // /api/calls/trigger which also supports isTest:true with raw phone.
     let body: {
       agentId?: string;
       contactId?: string;
@@ -144,8 +149,6 @@ export async function POST(req: NextRequest) {
       }
       contactPhone = phone;
     } else {
-      // Test-call path — raw phone, no contact row. Template vars fall
-      // back to "there" / "our team" via substituteVariables.
       contactPhone = rawContactPhone!.trim();
       if (!contactPhone) {
         return NextResponse.json(
@@ -194,7 +197,7 @@ export async function POST(req: NextRequest) {
       aiTemperature: (settings.ai_temperature as number) ?? 0.7,
     };
 
-    // ── 7. Number-pool rotation (mirrors /api/calls/trigger:92-149) ──
+    // ── 7. Number-pool rotation ────────────────────────────────
     const { data: nums, error: numsErr } = await supabaseAdmin
       .from("phone_numbers")
       .select("id, number, daily_used, daily_cap, rotation_order, last_used_at")
@@ -246,13 +249,41 @@ export async function POST(req: NextRequest) {
         .eq("id", selectedNumber.id);
     }
 
-    // ── 8. Create LiveKit room + dispatch agent ───────────────
-    //
-    // Stage A (Apr 22): migrated to the new createRoom() options-object
-    // signature. No egress yet — that's Stage B. No calls-row ordering
-    // refactor yet — that's Stage C. This change is a mechanical signature
-    // migration so the build stays green.
+    // ── 8. Insert calls row FIRST (new in Stage C) ────────────
+    // Previously this happened after SIP dial — which meant we couldn't
+    // include callRecordId in room metadata and couldn't compute the egress
+    // filepath. Now the row is written up front; any downstream failure
+    // marks it failed via bestEffortCleanup() instead of leaving it silent.
     const roomName = `sip-out-${randomUUID()}`;
+
+    const { data: callRecord, error: callErr } = await supabaseAdmin
+      .from("calls")
+      .insert({
+        organization_id: orgId,
+        ai_agent_id: a.id,
+        contact_id: c ? (c.id as string) : null,
+        direction: "outbound",
+        status: "initiated",
+        call_type: "webrtc", // TODO: consider 'sip_outbound' after UI audit
+        livekit_room_id: roomName,
+        from_number: fromNumber,
+        to_number: contactPhone,
+        started_at: new Date().toISOString(),
+        provider: "livekit",
+        recording_disclosed: true,
+      })
+      .select("id")
+      .single();
+
+    if (callErr || !callRecord) {
+      console.error("[sip-outbound] calls insert failed:", callErr?.message);
+      return NextResponse.json(
+        { error: "call_record_insert_failed", detail: callErr?.message ?? null },
+        { status: 500 },
+      );
+    }
+    const callId = callRecord.id as string;
+
     const displayName = c
       ? `${(c.first_name as string | null) ?? ""} ${(c.last_name as string | null) ?? ""}`
           .trim() || "Contact"
@@ -260,24 +291,37 @@ export async function POST(req: NextRequest) {
         ? "Test Call"
         : "Contact";
 
+    // ── 9. Build metadata and egress config ───────────────────
+    //
+    // Metadata now includes callRecordId + callType + organizationId so the
+    // webhook handler can resolve the calls row directly from room metadata
+    // (matches softphone pattern from Apr 21).
     const metadata = JSON.stringify({
       source: "sip_outbound",
       agentId: a.id,
       contactId: c ? (c.id as string) : null,
       orgId,
+      organizationId: orgId,
+      callRecordId: callId,
+      callType: "webrtc_outbound_pstn", // for webhook routing; calls.call_type stays 'webrtc' above
       agentConfig,
       fromNumber,
       isTest: !!isTest,
     });
 
+    const egressConfig = buildCallRecordingEgress(orgId, callId, roomName);
+
+    // ── 10. Create LiveKit room ───────────────────────────────
     try {
       await createRoom({
         name: roomName,
         metadata,
         emptyTimeout: 0,
+        egress: egressConfig,
       });
     } catch (err) {
       console.error("[sip-outbound] createRoom failed:", err);
+      await bestEffortCleanup(callId, roomName, "room_create_failed");
       return NextResponse.json(
         {
           error: "sip_dispatch_failed",
@@ -287,10 +331,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // ── 11. Dispatch AI agent worker ──────────────────────────
     try {
       await dispatchAgent(roomName, "lead-friendly", metadata);
     } catch (err) {
       console.error("[sip-outbound] dispatchAgent failed:", err);
+      await bestEffortCleanup(callId, roomName, "dispatch_failed");
       return NextResponse.json(
         {
           error: "sip_dispatch_failed",
@@ -300,10 +346,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── 9. Dial the contact via LiveKit SIP ───────────────────
+    // ── 12. Dial the contact via LiveKit SIP ──────────────────
     const outboundTrunkId = process.env.LIVEKIT_SIP_OUTBOUND_TRUNK_ID;
     if (!outboundTrunkId) {
       console.error("[sip-outbound] LIVEKIT_SIP_OUTBOUND_TRUNK_ID not set");
+      await bestEffortCleanup(callId, roomName, "missing_trunk_config");
       return NextResponse.json(
         { error: "sip_dispatch_failed", detail: "outbound trunk not configured" },
         { status: 500 },
@@ -321,6 +368,7 @@ export async function POST(req: NextRequest) {
       });
     } catch (err) {
       console.error("[sip-outbound] createSipParticipant failed:", err);
+      await bestEffortCleanup(callId, roomName, "sip_dispatch_failed");
       return NextResponse.json(
         {
           error: "sip_dispatch_failed",
@@ -330,39 +378,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── 10. Insert calls row (matches WebRTC shape) ───────────
-    // contact_id is explicit null for test-call path, same pattern as
-    // /api/calls/trigger and /api/webrtc/create-call use for no-contact
-    // calls. The column is nullable.
-    const { data: callRecord, error: callErr } = await supabaseAdmin
-      .from("calls")
-      .insert({
-        organization_id: orgId,
-        ai_agent_id: a.id,
-        contact_id: c ? (c.id as string) : null,
-        direction: "outbound",
-        status: "initiated",
-        call_type: "webrtc",
-        livekit_room_id: roomName,
-        from_number: fromNumber,
-        to_number: contactPhone,
-        started_at: new Date().toISOString(),
-      })
-      .select("id")
-      .single();
-
-    if (callErr || !callRecord) {
-      console.error("[sip-outbound] calls insert failed:", callErr?.message);
-      // Room is already up; we don't tear it down. The call is running, we
-      // just failed to log it. Worker will still complete normally.
-      return NextResponse.json(
-        { error: "call_record_insert_failed", detail: callErr?.message ?? null },
-        { status: 500 },
-      );
-    }
-
     return NextResponse.json({
-      callId: callRecord.id,
+      callId,
       roomName,
     });
   } catch (err) {
@@ -374,5 +391,39 @@ export async function POST(req: NextRequest) {
       },
       { status: 500 },
     );
+  }
+}
+
+// ── Helpers ──────────────────────────────────────────────────
+
+/**
+ * Mark the calls row as failed and tear down the room, if any. Called when
+ * a post-insert step (room create / dispatch / SIP dial) fails and we want
+ * to leave a visible failure record rather than a silently-stuck 'initiated'
+ * row. All errors are logged but not thrown — we're already in an error path.
+ */
+async function bestEffortCleanup(
+  callId: string,
+  roomName: string,
+  hangupCause: string,
+): Promise<void> {
+  try {
+    await supabaseAdmin
+      .from("calls")
+      .update({
+        status: "failed",
+        ended_at: new Date().toISOString(),
+        hangup_cause: hangupCause,
+        hangup_source: "livekit",
+      })
+      .eq("id", callId);
+  } catch (e) {
+    console.error(`[sip-outbound] cleanup: mark-failed error:`, e);
+  }
+  try {
+    await deleteRoom(roomName);
+  } catch (e) {
+    // deleteRoom throws if room never existed or already gone — harmless
+    console.error(`[sip-outbound] cleanup: deleteRoom error (benign if room not created):`, e);
   }
 }
