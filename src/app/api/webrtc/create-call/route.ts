@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { createRoom, createAccessToken, dispatchAgent, getLiveKitUrl } from "@/lib/livekit/server";
+import { buildCallRecordingEgress } from "@/lib/livekit/egress";
 import { substituteVariables, type PromptVarContext } from "@/lib/prompt-vars";
 
 /**
@@ -181,22 +182,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Failed to create call record" }, { status: 500 });
     }
 
-    // ── 4. Create LiveKit room with full metadata + agent dispatch ──
+    // ── 4. Create LiveKit room with full metadata + optional egress ──
     //
-    // Uses the options-object createRoom() signature (server.ts, Apr 22).
-    // Stage A migration: no egress wired here yet — that's Stage B.
-    // emptyTimeout: 0 is the new default and matches softphone behavior.
+    // Stage B (Apr 22): egress now wired in via the shared buildCallRecordingEgress
+    // helper so AI agent test calls produce call_transcripts rows, same as
+    // softphone. The helper returns undefined when RECORDING_ENABLED=false or
+    // any S3 env var is missing; in that case the call proceeds without
+    // recording (logged).
+    //
+    // Agent dispatch stays explicit via dispatchAgent() + token-embedded
+    // RoomAgentDispatch below.
     const fullMetadata = JSON.stringify({
       agentConfig,
       contactId: contactId ?? null,
       callRecordId: callRecord.id,
     });
 
+    const egressConfig = buildCallRecordingEgress(
+      a.organization_id as string,
+      callRecord.id,
+      roomName,
+    );
+
     try {
       await createRoom({
         name: roomName,
         metadata: fullMetadata,
         emptyTimeout: 0,
+        egress: egressConfig,
       });
     } catch (err) {
       console.error("[webrtc/create-call] room creation failed:", err);
