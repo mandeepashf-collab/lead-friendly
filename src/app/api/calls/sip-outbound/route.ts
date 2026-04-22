@@ -247,6 +247,11 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 8. Create LiveKit room + dispatch agent ───────────────
+    //
+    // Stage A (Apr 22): migrated to the new createRoom() options-object
+    // signature. No egress yet — that's Stage B. No calls-row ordering
+    // refactor yet — that's Stage C. This change is a mechanical signature
+    // migration so the build stays green.
     const roomName = `sip-out-${randomUUID()}`;
     const displayName = c
       ? `${(c.first_name as string | null) ?? ""} ${(c.last_name as string | null) ?? ""}`
@@ -266,7 +271,11 @@ export async function POST(req: NextRequest) {
     });
 
     try {
-      await createRoom(roomName, metadata);
+      await createRoom({
+        name: roomName,
+        metadata,
+        emptyTimeout: 0,
+      });
     } catch (err) {
       console.error("[sip-outbound] createRoom failed:", err);
       return NextResponse.json(

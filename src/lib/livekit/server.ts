@@ -2,7 +2,7 @@
  * LiveKit Server Helpers
  *
  * Wraps `livekit-server-sdk` for:
- *  - Creating rooms
+ *  - Creating rooms (with optional egress)
  *  - Minting access tokens (browser participant + agent worker)
  *  - Webhook verification
  */
@@ -15,6 +15,7 @@ import {
   RoomServiceClient,
   WebhookReceiver,
 } from "livekit-server-sdk";
+import type { RoomEgress } from "@livekit/protocol";
 
 // ── Environment ────────────────────────────────────────────────
 const LK_URL = process.env.LIVEKIT_URL ?? "";
@@ -65,23 +66,53 @@ export function getRoomService(): RoomServiceClient {
   return _roomService;
 }
 
-/**
- * Create a LiveKit room with metadata attached.
- *
- * Agent dispatch is handled separately via dispatchAgent() using the
- * AgentDispatchClient — this is the reliable way to trigger explicit dispatch
- * in LiveKit Cloud.
- */
-export async function createRoom(
-  roomName: string,
-  metadata: string,
-  emptyTimeout = 300,
-): Promise<void> {
+// ── Room creation ──────────────────────────────────────────────
+//
+// Signature changed Apr 22 from positional args (roomName, metadata,
+// emptyTimeout=300) to an options object. Why:
+//   1. Recording egress needs to be attached at createRoom time — positional
+//      args were becoming unwieldy.
+//   2. emptyTimeout default changed from 300s to 0s. None of Lead Friendly's
+//      call flows benefit from rooms lingering after participants leave, and
+//      lingering rooms delay both egress finalization (→ recording upload)
+//      and room_finished webhooks (→ accurate ended_at).
+//
+// All three callers (/api/softphone/initiate, /api/webrtc/create-call,
+// /api/calls/sip-outbound) are migrated in this same change.
+//
+// Agent dispatch is still handled separately via dispatchAgent() — it
+// lives outside createRoom because the dispatch API is room-independent
+// and we want to be able to retry dispatch without recreating the room.
+
+export interface CreateRoomOptions {
+  /** Unique LiveKit room name. */
+  name: string;
+  /**
+   * JSON-encoded metadata. Should always be JSON so the webhook handler
+   * can parse it to resolve the calls.id via metadata.callRecordId.
+   */
+  metadata: string;
+  /**
+   * Seconds the room lingers after the last participant leaves. Default 0
+   * (immediate teardown). Pass a higher value only if you have a specific
+   * reconnection scenario in mind.
+   */
+  emptyTimeout?: number;
+  /**
+   * Optional egress config. Build with buildCallRecordingEgress(orgId,
+   * callId, roomName) from @/lib/livekit/egress. Pass undefined to skip
+   * recording (e.g. when RECORDING_ENABLED is false).
+   */
+  egress?: RoomEgress;
+}
+
+export async function createRoom(opts: CreateRoomOptions): Promise<void> {
   const svc = getRoomService();
   await svc.createRoom({
-    name: roomName,
-    emptyTimeout,
-    metadata,
+    name: opts.name,
+    emptyTimeout: opts.emptyTimeout ?? 0,
+    metadata: opts.metadata,
+    egress: opts.egress,
   });
 }
 

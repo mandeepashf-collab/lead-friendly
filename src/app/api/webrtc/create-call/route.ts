@@ -182,6 +182,10 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 4. Create LiveKit room with full metadata + agent dispatch ──
+    //
+    // Uses the options-object createRoom() signature (server.ts, Apr 22).
+    // Stage A migration: no egress wired here yet — that's Stage B.
+    // emptyTimeout: 0 is the new default and matches softphone behavior.
     const fullMetadata = JSON.stringify({
       agentConfig,
       contactId: contactId ?? null,
@@ -189,7 +193,11 @@ export async function POST(req: NextRequest) {
     });
 
     try {
-      await createRoom(roomName, fullMetadata);
+      await createRoom({
+        name: roomName,
+        metadata: fullMetadata,
+        emptyTimeout: 0,
+      });
     } catch (err) {
       console.error("[webrtc/create-call] room creation failed:", err);
       // Roll back the call record so we don't leak orphans

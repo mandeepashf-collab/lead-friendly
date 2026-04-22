@@ -5,16 +5,10 @@ import {
   deleteRoom,
   createAccessToken,
   getLiveKitUrl,
-  getRoomService,
+  createRoom,
 } from "@/lib/livekit/server";
+import { buildCallRecordingEgress } from "@/lib/livekit/egress";
 import { createSipParticipant } from "@/lib/livekit/sip";
-import {
-  EncodedFileOutput,
-  EncodedFileType,
-  RoomCompositeEgressRequest,
-  RoomEgress,
-  S3Upload,
-} from "@livekit/protocol";
 
 /**
  * POST /api/softphone/initiate
@@ -216,7 +210,13 @@ export async function POST(req: NextRequest) {
       .update({ livekit_room_id: roomName })
       .eq("id", callId);
 
-    // ── Create LiveKit room with metadata ───────────────────
+    // ── Create LiveKit room with metadata + optional egress ─
+    //
+    // Egress config is built by the shared helper (src/lib/livekit/egress.ts)
+    // so all three call paths (softphone, webrtc/create-call, sip-outbound)
+    // share identical recording behavior. Returns undefined if
+    // RECORDING_ENABLED=false or any S3 env var is missing — in which case
+    // the call proceeds without recording (logged).
     const roomMetadata = JSON.stringify({
       callRecordId: callId,
       organizationId: orgId,
@@ -225,71 +225,13 @@ export async function POST(req: NextRequest) {
       contactId: contact.id,
     });
 
-    // Build auto-egress config when recording is enabled. LiveKit will start
-    // a RoomComposite (audio-only) egress as soon as the room has content,
-    // and upload the final file directly to Supabase Storage via the
-    // S3-compatible API.
-    const recordingEnabled = process.env.RECORDING_ENABLED === "true";
-
-    // Defensive: if RECORDING_ENABLED=true but any S3 env var is missing,
-    // log loudly and skip egress rather than sending "undefined" strings to
-    // LiveKit (the ! non-null assertions are TypeScript-only, not runtime
-    // checks). A call without recording is far better than a failed call.
-    const requiredS3Vars = [
-      "SUPABASE_S3_ACCESS_KEY_ID",
-      "SUPABASE_S3_SECRET_ACCESS_KEY",
-      "SUPABASE_S3_ENDPOINT",
-      "SUPABASE_S3_REGION",
-      "SUPABASE_S3_BUCKET",
-    ] as const;
-    const missingS3Vars = recordingEnabled
-      ? requiredS3Vars.filter((k) => !process.env[k])
-      : [];
-    if (recordingEnabled && missingS3Vars.length > 0) {
-      console.error(
-        `[softphone/initiate] RECORDING_ENABLED=true but missing env vars: ${missingS3Vars.join(", ")}. Skipping egress for call ${callId}.`,
-      );
-    }
-
-    const egressConfig =
-      recordingEnabled && missingS3Vars.length === 0
-        ? new RoomEgress({
-            room: new RoomCompositeEgressRequest({
-              roomName,
-              audioOnly: true,
-              fileOutputs: [
-                new EncodedFileOutput({
-                  fileType: EncodedFileType.OGG,
-                  filepath: `${orgId}/${callId}.ogg`,
-                  disableManifest: true,
-                  output: {
-                    case: "s3",
-                    value: new S3Upload({
-                      accessKey: process.env.SUPABASE_S3_ACCESS_KEY_ID!,
-                      secret: process.env.SUPABASE_S3_SECRET_ACCESS_KEY!,
-                      endpoint: process.env.SUPABASE_S3_ENDPOINT!,
-                      region: process.env.SUPABASE_S3_REGION!,
-                      bucket: process.env.SUPABASE_S3_BUCKET!,
-                      forcePathStyle: true,
-                    }),
-                  },
-                }),
-              ],
-            }),
-          })
-        : undefined;
+    const egressConfig = buildCallRecordingEgress(orgId, callId, roomName);
 
     try {
-      // NOTE: Using getRoomService directly instead of the createRoom helper
-      // because the helper does not currently accept an egress parameter.
-      // If egress config is needed elsewhere, extend the helper in a
-      // separate PR. emptyTimeout=0 so the room disappears immediately once
-      // everyone leaves.
-      const svc = getRoomService();
-      await svc.createRoom({
+      await createRoom({
         name: roomName,
-        emptyTimeout: 0,
         metadata: roomMetadata,
+        emptyTimeout: 0,
         egress: egressConfig,
       });
     } catch (roomErr) {
