@@ -20,6 +20,7 @@ import {
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useCall } from "@/hooks/use-calls";
+import { useRecordingUrl } from "@/hooks/use-recording-url";
 
 // Shape of a row in the call_turns table (see migrations / voice/answer route).
 interface CallTurn {
@@ -103,6 +104,10 @@ export default function CallDetailPage() {
   const id = params?.id ?? null;
 
   const { call, loading: callLoading } = useCall(id);
+  const recordingUrlState = useRecordingUrl({
+    callId: call?.id,
+    storedUrl: call?.recording_url,
+  });
 
   const [turns, setTurns] = useState<CallTurn[]>([]);
   const [turnsLoading, setTurnsLoading] = useState(true);
@@ -334,13 +339,13 @@ export default function CallDetailPage() {
             <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
               Recording
             </h2>
-            {call.recording_url ? (
+            {recordingUrlState.status === "ready" ? (
               <div className="mt-3 space-y-3">
                 <audio
                   ref={audioRef}
                   controls
                   preload="metadata"
-                  src={call.recording_url}
+                  src={recordingUrlState.signedUrl}
                   style={{ colorScheme: "dark" }}
                   className="h-10 w-full"
                   onTimeUpdate={(e) =>
@@ -356,7 +361,7 @@ export default function CallDetailPage() {
                     {formatDuration(call.duration_seconds)}
                   </span>
                   <a
-                    href={call.recording_url}
+                    href={recordingUrlState.signedUrl}
                     download
                     className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-1 text-xs font-medium text-zinc-300 hover:bg-zinc-700"
                   >
@@ -364,6 +369,12 @@ export default function CallDetailPage() {
                   </a>
                 </div>
               </div>
+            ) : recordingUrlState.status === "loading" ? (
+              <p className="mt-3 text-sm text-zinc-500">Loading recording…</p>
+            ) : recordingUrlState.status === "error" ? (
+              <p className="mt-3 text-sm text-amber-500">
+                Recording unavailable: {recordingUrlState.error}
+              </p>
             ) : (
               <p className="mt-3 text-sm text-zinc-500">
                 No recording is available for this call.

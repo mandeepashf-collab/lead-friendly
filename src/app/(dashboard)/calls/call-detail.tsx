@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import { useRecordingUrl } from "@/hooks/use-recording-url";
 import type { Call } from "@/types/database";
 
 interface Props {
@@ -38,6 +39,10 @@ export function CallDetail({ call, onClose, onUpdated }: Props) {
   const [notes, setNotes] = useState<string>(call.notes || "");
   const [savingNotes, setSavingNotes] = useState(false);
   const [notesSaved, setNotesSaved] = useState(false);
+  const recordingUrlState = useRecordingUrl({
+    callId: call.id,
+    storedUrl: call.recording_url,
+  });
 
   // Reset notes state if parent passes a different call
   useEffect(() => {
@@ -162,26 +167,36 @@ export function CallDetail({ call, onClose, onUpdated }: Props) {
           )}
 
           {/* Recording */}
-          {call.recording_url && (
-            <div className="space-y-2">
-              <h4 className="text-xs font-semibold uppercase text-zinc-500">Recording</h4>
-              <div className="rounded-lg border border-zinc-700 bg-zinc-800/50 p-3">
-                <audio
-                  controls
-                  className="h-8 w-full"
-                  src={call.recording_url}
-                  style={{ colorScheme: "dark" }}
-                />
-                <a
-                  href={call.recording_url}
-                  download
-                  className="mt-2 block w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-center text-xs font-medium text-zinc-300 hover:bg-zinc-700"
-                >
-                  Download Recording
-                </a>
-              </div>
+          <div className="space-y-2">
+            <h4 className="text-xs font-semibold uppercase text-zinc-500">Recording</h4>
+            <div className="rounded-lg border border-zinc-700 bg-zinc-800/50 p-3">
+              {recordingUrlState.status === "ready" ? (
+                <>
+                  <audio
+                    controls
+                    className="h-8 w-full"
+                    src={recordingUrlState.signedUrl}
+                    style={{ colorScheme: "dark" }}
+                  />
+                  <a
+                    href={recordingUrlState.signedUrl}
+                    download
+                    className="mt-2 block w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-center text-xs font-medium text-zinc-300 hover:bg-zinc-700"
+                  >
+                    Download Recording
+                  </a>
+                </>
+              ) : recordingUrlState.status === "loading" ? (
+                <p className="text-xs text-zinc-500">Loading recording…</p>
+              ) : recordingUrlState.status === "error" ? (
+                <p className="text-xs text-amber-500">
+                  Recording unavailable: {recordingUrlState.error}
+                </p>
+              ) : (
+                <p className="text-xs text-zinc-500">No recording available.</p>
+              )}
             </div>
-          )}
+          </div>
 
           {/* Call Summary */}
           {call.call_summary && (

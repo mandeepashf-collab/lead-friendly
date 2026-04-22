@@ -11,6 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useContact, updateContact as updateContactApi, deleteContact } from "@/hooks/use-contacts";
+import { useRecordingUrl } from "@/hooks/use-recording-url";
 import { useSoftphone } from "@/components/softphone/SoftphoneContext";
 import type { Call, Conversation, Opportunity } from "@/types/database";
 
@@ -71,7 +72,18 @@ function ContactField({ label, value, type = "text", onSave }: {
 }
 
 // ── Inline Audio Player ───────────────────────────────────────────
-function InlineAudioPlayer({ url, duration }: { url: string; duration: number }) {
+function InlineAudioPlayer({
+  callId,
+  storedUrl,
+  duration,
+}: {
+  callId: string;
+  storedUrl: string | null;
+  duration: number;
+}) {
+  // Mount-gated: this component only mounts when the parent CallActivityCard
+  // is expanded, so the hook fires at most once per expansion.
+  const recordingUrlState = useRecordingUrl({ callId, storedUrl });
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
@@ -84,7 +96,7 @@ function InlineAudioPlayer({ url, duration }: { url: string; duration: number })
     a.ontimeupdate = () => setCurrent(a.currentTime);
     a.onloadedmetadata = () => setDur(a.duration);
     a.onended = () => setPlaying(false);
-  }, []);
+  }, [recordingUrlState.status]);
 
   const toggle = () => {
     const a = audioRef.current;
@@ -109,9 +121,25 @@ function InlineAudioPlayer({ url, duration }: { url: string; duration: number })
 
   const fmt = (s: number) => `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
 
+  if (recordingUrlState.status === "loading") {
+    return <p className="text-xs text-zinc-500">Loading recording…</p>;
+  }
+  if (recordingUrlState.status === "error") {
+    return (
+      <p className="text-xs text-amber-500">
+        Recording unavailable: {recordingUrlState.error}
+      </p>
+    );
+  }
+  if (recordingUrlState.status !== "ready") {
+    return <p className="text-xs text-zinc-500">No recording available.</p>;
+  }
+
+  const signedUrl = recordingUrlState.signedUrl;
+
   return (
     <div>
-      <audio ref={audioRef} src={url} preload="none" />
+      <audio ref={audioRef} src={signedUrl} preload="none" />
       <div className="flex items-center gap-3">
         <button onClick={toggle}
           className="w-8 h-8 rounded-full bg-zinc-800 hover:bg-indigo-600 flex items-center justify-center flex-shrink-0 transition-colors">
@@ -132,7 +160,7 @@ function InlineAudioPlayer({ url, duration }: { url: string; duration: number })
           className="text-[10px] font-mono text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded w-7 text-center hover:text-white">
           {speed}×
         </button>
-        <a href={url} download className="p-1.5 text-zinc-600 hover:text-zinc-400 transition-colors">
+        <a href={signedUrl} download className="p-1.5 text-zinc-600 hover:text-zinc-400 transition-colors">
           <FileText size={12} />
         </a>
       </div>
@@ -198,9 +226,12 @@ function CallActivityCard({ call }: { call: Call }) {
 
       {expanded && hasExtra && (
         <div className="border-t border-zinc-800 px-4 py-4 space-y-4">
-          {call.recording_url && (
-            <InlineAudioPlayer url={call.recording_url} duration={call.duration_seconds} />
-          )}
+          <InlineAudioPlayer
+            callId={call.id}
+            storedUrl={call.recording_url}
+            duration={call.duration_seconds}
+          />
+
           {call.call_summary && (
             <div>
               <p className="text-xs font-medium text-zinc-500 mb-1.5 flex items-center gap-1.5">
