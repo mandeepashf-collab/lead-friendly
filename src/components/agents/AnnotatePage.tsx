@@ -444,7 +444,7 @@ export function AnnotatePage({ agentId }: { agentId: string }) {
                     )}
 
                     {isAnnotating && (
-                      <div className="mx-12 mb-3 bg-zinc-900 border border-zinc-700 rounded-xl p-4 space-y-3">
+                      <div className="mx-12 mb-20 bg-zinc-900 border border-zinc-700 rounded-xl p-4 space-y-3">
                         <div className="flex items-center justify-between">
                           <p className="text-xs font-medium text-zinc-300">
                             Add annotation for line {line.index + 1}
