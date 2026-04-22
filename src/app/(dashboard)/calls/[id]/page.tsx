@@ -18,21 +18,9 @@ import {
   Wifi,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { createClient } from "@/lib/supabase/client";
 import { useCall } from "@/hooks/use-calls";
 import { useRecordingUrl } from "@/hooks/use-recording-url";
-
-// Shape of a row in the call_turns table (see migrations / voice/answer route).
-interface CallTurn {
-  id: string;
-  call_id: string;
-  organization_id: string;
-  ordinal: number;
-  role: "user" | "agent" | string;
-  state_name: string | null;
-  content: string;
-  created_at?: string | null;
-}
+import { useCallTranscript, type TranscriptLine } from "@/hooks/useCallTranscript";
 
 function formatDuration(s: number) {
   if (!s || s < 0) return "0:00";
@@ -82,22 +70,6 @@ function SentimentBadge({ sentiment }: { sentiment: string | null }) {
   );
 }
 
-/**
- * Distribute turns evenly across the call's duration so we can highlight
- * the "currently playing" turn as the audio progresses. Telnyx recordings
- * don't give us per-turn timestamps out of the box, so we approximate using
- * each turn's ordinal position within the total call length.
- */
-function buildTurnTimeline(turns: CallTurn[], durationSeconds: number) {
-  const total = Math.max(durationSeconds || 0, turns.length); // avoid /0
-  const slice = turns.length > 0 ? total / turns.length : 0;
-  return turns.map((turn, i) => ({
-    ...turn,
-    startAt: i * slice,
-    endAt: (i + 1) * slice,
-  }));
-}
-
 export default function CallDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -109,85 +81,63 @@ export default function CallDetailPage() {
     storedUrl: call?.recording_url,
   });
 
-  const [turns, setTurns] = useState<CallTurn[]>([]);
-  const [turnsLoading, setTurnsLoading] = useState(true);
-  const [turnsError, setTurnsError] = useState<string | null>(null);
+  const transcriptState = useCallTranscript(id);
 
   const [currentTime, setCurrentTime] = useState(0);
   const [copied, setCopied] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const activeTurnRef = useRef<HTMLDivElement | null>(null);
+  const activeLineRef = useRef<HTMLDivElement | null>(null);
 
-  // Fetch call_turns for this call, ordered by ordinal.
-  useEffect(() => {
-    if (!id) return;
-    let cancelled = false;
-    setTurnsLoading(true);
-    setTurnsError(null);
+  // Pull the lines array out of the state union for use in useMemo deps
+  const lines: TranscriptLine[] =
+    transcriptState.state.status === "completed"
+      ? transcriptState.state.lines
+      : [];
 
-    const supabase = createClient();
-    supabase
-      .from("call_turns")
-      .select("*")
-      .eq("call_id", id)
-      .order("ordinal", { ascending: true })
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error) {
-          setTurnsError(error.message);
-          setTurns([]);
-        } else {
-          setTurns((data as CallTurn[]) || []);
-        }
-        setTurnsLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
-
-  const timeline = useMemo(
-    () => buildTurnTimeline(turns, call?.duration_seconds ?? 0),
-    [turns, call?.duration_seconds],
-  );
-
+  // Find the currently-playing line based on real Deepgram timestamps.
+  // startSec comes directly from Deepgram's utterance boundaries — no more
+  // ordinal-based estimation.
   const activeIndex = useMemo(() => {
-    if (timeline.length === 0) return -1;
-    // Find the last turn whose startAt <= currentTime.
+    if (lines.length === 0) return -1;
     let idx = -1;
-    for (let i = 0; i < timeline.length; i++) {
-      if (timeline[i].startAt <= currentTime) idx = i;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startSec <= currentTime) idx = i;
       else break;
     }
     return idx;
-  }, [timeline, currentTime]);
+  }, [lines, currentTime]);
 
-  // Scroll the active turn into view smoothly as playback progresses.
+  // Scroll the active line into view smoothly as playback progresses.
   useEffect(() => {
-    if (activeTurnRef.current) {
-      activeTurnRef.current.scrollIntoView({
+    if (activeLineRef.current) {
+      activeLineRef.current.scrollIntoView({
         behavior: "smooth",
         block: "nearest",
       });
     }
   }, [activeIndex]);
 
-  const handleSeekToTurn = (startAt: number) => {
+  const handleSeekToLine = (startSec: number) => {
     if (!audioRef.current) return;
-    audioRef.current.currentTime = startAt;
+    audioRef.current.currentTime = startSec;
     audioRef.current.play().catch(() => {
       /* autoplay may be blocked; user can hit play manually */
     });
   };
 
   const handleCopyTranscript = () => {
-    const text = turns.length
-      ? turns
-          .map((t) => `${t.role === "agent" ? "Agent" : "Caller"}: ${t.content}`)
-          .join("\n")
-      : call?.transcript || "";
+    let text = "";
+    if (transcriptState.state.status === "completed") {
+      text = transcriptState.state.flatText;
+      // Fall back to line-by-line if flatText is empty somehow
+      if (!text && transcriptState.state.lines.length > 0) {
+        text = transcriptState.state.lines
+          .map((l) => `${l.speaker}: ${l.text}`)
+          .join("\n");
+      }
+    }
+    if (!text && call?.transcript) text = call.transcript;
     if (!text) return;
     navigator.clipboard.writeText(text);
     setCopied(true);
@@ -306,10 +256,12 @@ export default function CallDetailPage() {
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
           <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-            Turns
+            Lines
           </p>
-          <p className="mt-2 text-3xl font-bold text-white">{turns.length}</p>
-          <p className="mt-1 text-xs text-zinc-600">Back-and-forth</p>
+          <p className="mt-2 text-3xl font-bold text-white">{lines.length}</p>
+          <p className="mt-1 text-xs text-zinc-600">
+            {transcriptState.state.status === "completed" ? "Transcript lines" : "Back-and-forth"}
+          </p>
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
           <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
@@ -440,35 +392,57 @@ export default function CallDetailPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 max-h-[32rem]">
-            {turnsLoading ? (
+            {transcriptState.state.status === "idle" ? (
+              call.transcript ? (
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-300">
+                  {call.transcript}
+                </p>
+              ) : (
+                <p className="py-10 text-center text-sm text-zinc-500">
+                  No transcript for this call.
+                </p>
+              )
+            ) : transcriptState.state.status === "pending" ||
+              transcriptState.state.status === "processing" ? (
               <div className="flex items-center justify-center gap-2 py-10 text-zinc-500">
                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-indigo-500" />
-                Loading transcript…
+                Transcript is being generated…
               </div>
-            ) : turnsError ? (
-              <p className="py-10 text-center text-sm text-red-400">
-                Couldn&apos;t load transcript: {turnsError}
+            ) : transcriptState.state.status === "failed" ? (
+              <p className="py-10 text-center text-sm text-amber-500">
+                Transcript failed to generate
+                {transcriptState.state.message
+                  ? ` — ${transcriptState.state.message}`
+                  : ""}
+                .
               </p>
-            ) : timeline.length > 0 ? (
+            ) : lines.length === 0 ? (
+              <p className="py-10 text-center text-sm text-zinc-500">
+                Transcript is empty.
+              </p>
+            ) : (
               <div className="space-y-2">
-                {timeline.map((turn, i) => {
-                  const isAgent = turn.role === "agent";
+                {lines.map((line, i) => {
+                  // Convention: "Speaker 0" = first to speak (agent on AI
+                  // outbound, rep on softphone). Lays out visually like a
+                  // chat: first speaker left, second speaker right.
+                  const isFirstSpeaker = line.speaker.endsWith("0");
                   const isActive = i === activeIndex;
                   return (
                     <div
-                      key={turn.id ?? `${turn.ordinal}-${i}`}
-                      ref={isActive ? activeTurnRef : undefined}
+                      key={line.index}
+                      ref={isActive ? activeLineRef : undefined}
                       className={cn(
                         "flex",
-                        isAgent ? "justify-start" : "justify-end",
+                        isFirstSpeaker ? "justify-start" : "justify-end",
                       )}
                     >
                       <button
                         type="button"
-                        onClick={() => handleSeekToTurn(turn.startAt)}
+                        onClick={() => handleSeekToLine(line.startSec)}
                         className={cn(
                           "max-w-[85%] rounded-xl border px-3 py-2 text-left text-sm transition-colors",
-                          isAgent
+                          isFirstSpeaker
                             ? "border-indigo-500/20 bg-indigo-500/10 text-indigo-100 hover:bg-indigo-500/20"
                             : "border-zinc-700 bg-zinc-800 text-zinc-100 hover:bg-zinc-700",
                           isActive &&
@@ -477,30 +451,29 @@ export default function CallDetailPage() {
                       >
                         <div className="flex items-center justify-between gap-3 mb-0.5">
                           <span className="text-[10px] uppercase font-semibold opacity-70">
-                            {isAgent ? "Agent" : "Caller"}
+                            {line.speaker}
                           </span>
                           <span className="text-[10px] font-mono opacity-60">
-                            {formatDuration(turn.startAt)}
+                            {formatDuration(line.startSec)}
                           </span>
                         </div>
                         <p className="leading-relaxed whitespace-pre-wrap">
-                          {turn.content}
+                          {line.text}
                         </p>
                       </button>
                     </div>
                   );
                 })}
               </div>
-            ) : call.transcript ? (
-              // Fallback: no structured turns, render the flat transcript.
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-300">
-                {call.transcript}
-              </p>
-            ) : (
-              <p className="py-10 text-center text-sm text-zinc-500">
-                No transcript yet for this call.
-              </p>
             )}
+            {transcriptState.state.status === "completed" &&
+              lines.length > 0 && (
+                <p className="mt-4 text-[10px] text-zinc-600 text-center">
+                  {transcriptState.state.model} ·{" "}
+                  {(transcriptState.state.overallConfidence * 100).toFixed(1)}%
+                  confidence · {lines.length} lines
+                </p>
+              )}
           </div>
         </div>
       </div>

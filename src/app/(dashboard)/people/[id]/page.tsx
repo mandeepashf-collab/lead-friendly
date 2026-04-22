@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useContact, updateContact as updateContactApi, deleteContact } from "@/hooks/use-contacts";
 import { useRecordingUrl } from "@/hooks/use-recording-url";
+import { useCallTranscript } from "@/hooks/useCallTranscript";
 import { useSoftphone } from "@/components/softphone/SoftphoneContext";
 import type { Call, Conversation, Opportunity } from "@/types/database";
 
@@ -178,7 +179,17 @@ function CallActivityCard({ call }: { call: Call }) {
   }
 
   const isAI = !!call.ai_agent_id;
-  const hasExtra = call.recording_url || call.transcript || call.call_summary;
+  // A call has expandable content if it has any of:
+  //   - a recording (URL column)
+  //   - a legacy text transcript (calls.transcript, pre-Deepgram)
+  //   - a new-pipeline transcript (calls.transcript_status, even if still processing)
+  //   - a summary
+  const hasExtra = Boolean(
+    call.recording_url ||
+    call.transcript ||
+    (call as unknown as { transcript_status?: string | null }).transcript_status ||
+    call.call_summary
+  );
 
   const statusColor: Record<string, string> = {
     completed: "text-emerald-400", initiated: "text-zinc-500",
@@ -242,50 +253,79 @@ function CallActivityCard({ call }: { call: Call }) {
               </p>
             </div>
           )}
-          {call.transcript && (
-            <div>
-              <p className="text-xs font-medium text-zinc-500 mb-1.5 flex items-center gap-1.5">
-                <MessageSquare size={11} /> Transcript
-              </p>
-              <div className="bg-zinc-800 rounded-lg px-3 py-2 max-h-48 overflow-y-auto">
-                {(() => {
-                  const t = call.transcript as unknown;
-                  let lines: { speaker: string; text: string }[] | null = null;
-                  if (Array.isArray(t)) {
-                    lines = t as { speaker: string; text: string }[];
-                  } else if (typeof t === 'string') {
-                    try {
-                      const parsed = JSON.parse(t);
-                      if (Array.isArray(parsed)) lines = parsed;
-                    } catch { /* not JSON, render as plain text */ }
-                  }
-                  if (lines) {
-                    return (
-                      <div className="space-y-1.5">
-                        {lines.map((line, i) => (
-                          <div key={i} className={`flex gap-2 ${line.speaker === 'agent' ? '' : 'flex-row-reverse'}`}>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 mt-0.5 ${line.speaker === 'agent' ? 'bg-indigo-500/10 text-indigo-400' : 'bg-zinc-700 text-zinc-400'}`}>
-                              {line.speaker === 'agent' ? 'AI' : 'Lead'}
-                            </span>
-                            <p className={`text-xs leading-relaxed px-2.5 py-1.5 rounded-lg max-w-[80%] ${line.speaker === 'agent' ? 'bg-indigo-500/10 text-indigo-100' : 'bg-zinc-700 text-zinc-300'}`}>
-                              {line.text}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  }
-                  return (
-                    <p className="text-xs text-zinc-400 leading-relaxed font-mono whitespace-pre-wrap">
-                      {String(call.transcript)}
-                    </p>
-                  );
-                })()}
-              </div>
-            </div>
-          )}
+          <TranscriptSection callId={call.id} />
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Transcript section (Deepgram, via call_transcripts) ──────────
+function TranscriptSection({ callId }: { callId: string }) {
+  const { state } = useCallTranscript(callId);
+
+  if (state.status === "idle") return null;
+
+  return (
+    <div>
+      <p className="text-xs font-medium text-zinc-500 mb-1.5 flex items-center gap-1.5">
+        <MessageSquare size={11} /> Transcript
+      </p>
+      <div className="bg-zinc-800 rounded-lg px-3 py-2 max-h-48 overflow-y-auto">
+        {state.status === "pending" || state.status === "processing" ? (
+          <p className="text-xs text-zinc-500 italic">
+            Transcript is being generated...
+          </p>
+        ) : state.status === "failed" ? (
+          <p className="text-xs text-amber-500">
+            Transcript failed to generate
+            {state.message ? ` — ${state.message}` : ""}
+          </p>
+        ) : state.lines.length === 0 ? (
+          <p className="text-xs text-zinc-500 italic">
+            Transcript is empty
+          </p>
+        ) : (
+          <div className="space-y-1.5">
+            {state.lines.map((line) => {
+              // Convention: "Speaker 0" = first speaker in room = agent for AI
+              // calls, rep for softphone calls. Not perfect; a future refactor
+              // could derive role from participant identity in the raw_json.
+              const isFirstSpeaker = line.speaker.endsWith("0");
+              return (
+                <div
+                  key={line.index}
+                  className={`flex gap-2 ${isFirstSpeaker ? "" : "flex-row-reverse"}`}
+                >
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 mt-0.5 ${
+                      isFirstSpeaker
+                        ? "bg-indigo-500/10 text-indigo-400"
+                        : "bg-zinc-700 text-zinc-400"
+                    }`}
+                  >
+                    {line.speaker}
+                  </span>
+                  <p
+                    className={`text-xs leading-relaxed px-2.5 py-1.5 rounded-lg max-w-[80%] ${
+                      isFirstSpeaker
+                        ? "bg-indigo-500/10 text-indigo-100"
+                        : "bg-zinc-700 text-zinc-300"
+                    }`}
+                  >
+                    {line.text}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {state.status === "completed" && state.lines.length > 0 && (
+          <p className="text-[10px] text-zinc-600 mt-2">
+            {state.model} · {(state.overallConfidence * 100).toFixed(1)}% confidence · {state.lines.length} lines
+          </p>
+        )}
+      </div>
     </div>
   );
 }
