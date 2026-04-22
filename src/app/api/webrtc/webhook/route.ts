@@ -40,8 +40,9 @@ const supabaseAdmin = createClient(
 async function resolveCallRecordId(
   roomName: string,
   roomMetadata: string,
+  egressRoomName?: string,
 ): Promise<string | null> {
-  // Try metadata first
+  // Try room metadata first (fastest, most direct)
   try {
     if (roomMetadata) {
       const meta = JSON.parse(roomMetadata);
@@ -51,18 +52,25 @@ async function resolveCallRecordId(
     // metadata malformed — fall through
   }
 
-  // Fallback: look up by livekit_room_id
-  if (!roomName) return null;
+  // Use whichever room name is available:
+  // - Top-level event.room.name for most events (participant_*, track_*, room_*)
+  // - event.egressInfo.roomName for egress events (where event.room is undefined)
+  const effectiveRoomName = roomName || egressRoomName || "";
+  if (!effectiveRoomName) return null;
+
   const { data, error } = await supabaseAdmin
     .from("calls")
     .select("id")
-    .eq("livekit_room_id", roomName)
+    .eq("livekit_room_id", effectiveRoomName)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
   if (error) {
-    console.error(`[webrtc/webhook] fallback lookup failed for room ${roomName}:`, error);
+    console.error(
+      `[webrtc/webhook] fallback lookup failed for room ${effectiveRoomName}:`,
+      error,
+    );
     return null;
   }
   return data?.id ?? null;
@@ -114,8 +122,23 @@ export async function POST(req: NextRequest) {
 
     console.log(`[webrtc/webhook] ${eventType} room=${roomName}`);
 
-    // Resolve callRecordId via metadata → fallback to livekit_room_id lookup
-    const callRecordId = await resolveCallRecordId(roomName, roomMetadata);
+    // Resolve callRecordId via metadata → fallback to livekit_room_id lookup.
+    // egressInfo carries its own roomName for egress_* events where
+    // event.room is undefined.
+    const egressRoomName = event.egressInfo?.roomName ?? undefined;
+    const callRecordId = await resolveCallRecordId(
+      roomName,
+      roomMetadata,
+      egressRoomName,
+    );
+
+    // Visibility: warn if we get an egress event but can't find its call row.
+    // This is the exact silent-failure class that hid the recording-write bug.
+    if (!callRecordId && event.event?.startsWith("egress_")) {
+      console.warn(
+        `[webrtc/webhook] ${event.event} could not resolve call record. roomName="${roomName}" egressRoomName="${egressRoomName}" egressId="${event.egressInfo?.egressId ?? ""}"`,
+      );
+    }
 
     // ── Handle events ────────────────────────────────────────
 
@@ -254,47 +277,66 @@ export async function POST(req: NextRequest) {
         break;
       }
 
-      // Egress (recording) finished — store URL + mark transcript pending
+      // Egress (recording) finished — store URL + mark transcript pending.
+      // Flattened with named skip-reason logs so every egress_ended event
+      // produces exactly one log line: success or a reason for skipping.
       case "egress_ended": {
-        const egressInfo = event.egressInfo;
-        if (egressInfo && callRecordId) {
-          const fileResults = egressInfo.fileResults ?? [];
-          // Prefer `filename` (the storage key we set in egress filepath,
-          // e.g. "{org_id}/{call_id}.ogg") over `location` (the full S3
-          // URL). createSignedUrl() requires the storage key, not a URL.
-          const rawPath =
-            fileResults[0]?.filename ?? fileResults[0]?.location ?? null;
-          // Defensive normalization: if we somehow land on a full URL,
-          // strip the bucket prefix so we always end up with a clean key.
-          const recordingUrl = rawPath
-            ? rawPath.includes("/call-recordings/")
-              ? rawPath.split("/call-recordings/")[1].split("?")[0]
-              : rawPath
-            : null;
-          const durationNs = fileResults[0]?.duration ?? null;
-          const durationSeconds =
-            durationNs != null
-              ? Math.max(0, Math.floor(Number(durationNs) / 1_000_000_000))
-              : null;
-
-          if (recordingUrl) {
-            const update: Record<string, unknown> = {
-              recording_url: recordingUrl,
-              transcript_status: "pending",
-            };
-            if (durationSeconds !== null) {
-              update.recording_duration_seconds = durationSeconds;
-            }
-
-            await supabaseAdmin
-              .from("calls")
-              .update(update)
-              .eq("id", callRecordId);
-            console.log(
-              `[webrtc/webhook] recording saved for call ${callRecordId}: ${recordingUrl} (${durationSeconds}s)`,
-            );
-          }
+        if (!callRecordId) {
+          console.warn(
+            `[webrtc/webhook] egress_ended: skipped DB update — no call record for egress ${event.egressInfo?.egressId ?? "?"} (roomName="${event.egressInfo?.roomName ?? ""}")`,
+          );
+          break;
         }
+
+        const egressInfo = event.egressInfo;
+        if (!egressInfo) {
+          console.warn(
+            `[webrtc/webhook] egress_ended: skipped DB update for call ${callRecordId} — no egressInfo in event`,
+          );
+          break;
+        }
+
+        const fileResults = egressInfo.fileResults ?? [];
+        // Prefer `filename` (the storage key we set in egress filepath,
+        // e.g. "{org_id}/{call_id}.ogg") over `location` (the full S3
+        // URL). createSignedUrl() requires the storage key, not a URL.
+        const rawPath =
+          fileResults[0]?.filename ?? fileResults[0]?.location ?? null;
+        // Defensive normalization: if we somehow land on a full URL,
+        // strip the bucket prefix so we always end up with a clean key.
+        const recordingUrl = rawPath
+          ? rawPath.includes("/call-recordings/")
+            ? rawPath.split("/call-recordings/")[1].split("?")[0]
+            : rawPath
+          : null;
+        const durationNs = fileResults[0]?.duration ?? null;
+        const durationSeconds =
+          durationNs != null
+            ? Math.max(0, Math.floor(Number(durationNs) / 1_000_000_000))
+            : null;
+
+        if (!recordingUrl) {
+          console.warn(
+            `[webrtc/webhook] egress_ended: skipped DB update for call ${callRecordId} — no fileResults in egressInfo`,
+          );
+          break;
+        }
+
+        const update: Record<string, unknown> = {
+          recording_url: recordingUrl,
+          transcript_status: "pending",
+        };
+        if (durationSeconds !== null) {
+          update.recording_duration_seconds = durationSeconds;
+        }
+
+        await supabaseAdmin
+          .from("calls")
+          .update(update)
+          .eq("id", callRecordId);
+        console.log(
+          `[webrtc/webhook] egress_ended: recording saved for call ${callRecordId}, url=${recordingUrl}, duration=${durationSeconds}s`,
+        );
         break;
       }
 
