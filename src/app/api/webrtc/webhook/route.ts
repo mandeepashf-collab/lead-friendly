@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getWebhookReceiver } from "@/lib/livekit/server";
+import { submitToDeepgram } from "@/lib/deepgram/submit";
 
 /**
  * POST /api/webrtc/webhook
@@ -337,6 +338,79 @@ export async function POST(req: NextRequest) {
         console.log(
           `[webrtc/webhook] egress_ended: recording saved for call ${callRecordId}, url=${recordingUrl}, duration=${durationSeconds}s`,
         );
+
+        // ── Kick off Deepgram async transcription ─────────────────────
+        const transcriptionEnabled = process.env.TRANSCRIPTION_ENABLED === "true";
+        const requiredDgVars = [
+          "DEEPGRAM_API_KEY",
+          "DEEPGRAM_CALLBACK_BASIC_AUTH_USER",
+          "DEEPGRAM_CALLBACK_BASIC_AUTH_PASS",
+        ] as const;
+        const missingDgVars = transcriptionEnabled
+          ? requiredDgVars.filter((k) => !process.env[k])
+          : [];
+
+        if (!transcriptionEnabled) {
+          console.log(
+            `[deepgram] skipped for call ${callRecordId}: TRANSCRIPTION_ENABLED=false`,
+          );
+          break;
+        }
+        if (missingDgVars.length > 0) {
+          console.error(
+            `[deepgram] skipped for call ${callRecordId}: missing env vars ${missingDgVars.join(", ")}`,
+          );
+          break;
+        }
+
+        try {
+          // Generate a 4-hour signed URL for Deepgram to fetch the audio.
+          // 4h allows for worst-case queue delays; UI playback uses 1h TTL separately.
+          // Reuse the existing service-role supabaseAdmin client — no need to
+          // spin up a second identical service client just to sign.
+          const DEEPGRAM_SIGNED_URL_TTL = 4 * 3600;
+          const { data: signed, error: signErr } = await supabaseAdmin.storage
+            .from("call-recordings")
+            .createSignedUrl(recordingUrl, DEEPGRAM_SIGNED_URL_TTL);
+
+          if (signErr || !signed) {
+            console.error(
+              `[deepgram] failed to sign URL for call ${callRecordId}:`,
+              signErr,
+            );
+            break;
+          }
+
+          // Determine our public base URL for the callback. Vercel provides VERCEL_URL
+          // for preview deploys; production uses NEXT_PUBLIC_APP_URL if set, else leadfriendly.com.
+          const callbackBaseUrl =
+            process.env.NEXT_PUBLIC_APP_URL ??
+            "https://www.leadfriendly.com";
+
+          const { request_id } = await submitToDeepgram({
+            audioSignedUrl: signed.signedUrl,
+            callbackBaseUrl,
+          });
+
+          await supabaseAdmin
+            .from("calls")
+            .update({
+              deepgram_request_id: request_id,
+              transcript_status: "processing",
+            })
+            .eq("id", callRecordId);
+
+          console.log(
+            `[deepgram] submitted for call ${callRecordId}, request_id=${request_id}`,
+          );
+        } catch (dgErr) {
+          console.error(
+            `[deepgram] submission failed for call ${callRecordId}:`,
+            dgErr instanceof Error ? dgErr.message : dgErr,
+          );
+          // Leave transcript_status='pending' so a future reaper cron can retry.
+        }
+
         break;
       }
 
