@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Settings, Building2, Users, Key, Bell, Shield, Save, Eye, EyeOff, Zap, Plus, X, Loader2, ToggleLeft, ToggleRight, MessageSquare, Mail, Phone, Calendar, AlertCircle } from "lucide-react";
+import { Settings, Building2, Users, Key, Bell, Shield, Save, Eye, EyeOff, Zap, Plus, X, Loader2, ToggleLeft, ToggleRight, MessageSquare, Mail, Phone, Calendar, AlertCircle, Tag, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useBrand } from "@/contexts/BrandContext";
 
-const TABS = ["organization", "team", "integrations", "notifications", "automations", "security"] as const;
+const TABS = ["organization", "team", "integrations", "notifications", "automations", "tags", "security"] as const;
 type Tab = typeof TABS[number];
 
 const TAB_LABELS: Record<Tab, string> = {
@@ -15,6 +15,7 @@ const TAB_LABELS: Record<Tab, string> = {
   integrations: "Integrations",
   notifications: "Notifications",
   automations: "Automations",
+  tags: "Tags",
   security: "Security",
 };
 
@@ -24,6 +25,7 @@ const TAB_ICONS: Record<Tab, React.ElementType> = {
   integrations: Key,
   notifications: Bell,
   automations: Zap,
+  tags: Tag,
   security: Shield,
 };
 
@@ -343,6 +345,246 @@ function AutomationsTab() {
   );
 }
 
+// ─── Tags Tab ────────────────────────────────────────────────────────────
+interface TagRow {
+  id: string;
+  name: string;
+  color: string | null;
+  description: string | null;
+  usage_count: number;
+}
+
+const SYSTEM_TAGS = new Set(["eval-failed"]);
+
+const TAG_DEFAULT_COLORS = [
+  "#6366f1", "#ef4444", "#10b981", "#f59e0b",
+  "#ec4899", "#14b8a6", "#8b5cf6", "#06b6d4",
+];
+
+function TagsTab() {
+  const [tags, setTags] = useState<TagRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newColor, setNewColor] = useState(TAG_DEFAULT_COLORS[0]);
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("tags")
+      .select("id, name, color, description, usage_count")
+      .order("name", { ascending: true });
+    if (error) setError(error.message);
+    else setTags((data as TagRow[]) ?? []);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleCreate = async () => {
+    const name = newName.trim();
+    if (!name) return;
+    setCreating(true);
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setCreating(false); return; }
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("organization_id")
+      .eq("id", user.id)
+      .single();
+    if (!profile?.organization_id) { setCreating(false); return; }
+
+    const { error } = await supabase.from("tags").insert({
+      organization_id: profile.organization_id,
+      name,
+      color: newColor,
+    });
+    if (error) setError(error.message);
+    else {
+      setNewName("");
+      setNewColor(TAG_DEFAULT_COLORS[0]);
+      await load();
+    }
+    setCreating(false);
+  };
+
+  const handleRename = async (tagId: string, currentName: string) => {
+    if (SYSTEM_TAGS.has(currentName.toLowerCase())) {
+      setError(`"${currentName}" is a system tag and cannot be renamed.`);
+      return;
+    }
+    const next = window.prompt(`Rename tag "${currentName}":`, currentName);
+    if (!next || next.trim() === currentName) return;
+    const supabase = createClient();
+    const { error } = await supabase.from("tags").update({ name: next.trim() }).eq("id", tagId);
+    if (error) setError(error.message);
+    else await load();
+  };
+
+  const handleColor = async (tagId: string, color: string) => {
+    const supabase = createClient();
+    const { error } = await supabase.from("tags").update({ color }).eq("id", tagId);
+    if (error) setError(error.message);
+    else await load();
+  };
+
+  const handleDelete = async (tag: TagRow) => {
+    if (SYSTEM_TAGS.has(tag.name.toLowerCase())) {
+      setError(`"${tag.name}" is a system tag and cannot be deleted.`);
+      return;
+    }
+    const used = tag.usage_count > 0
+      ? `This tag is currently applied to ${tag.usage_count} contact${tag.usage_count === 1 ? "" : "s"}. Deleting will remove it from all of them.\n\n`
+      : "";
+    if (!window.confirm(`${used}Delete tag "${tag.name}"?`)) return;
+    const supabase = createClient();
+    const { error } = await supabase.from("tags").delete().eq("id", tag.id);
+    if (error) setError(error.message);
+    else await load();
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-5 w-5 animate-spin text-zinc-500" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-3xl space-y-6">
+      <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 px-4 py-3 flex items-start gap-3">
+        <AlertCircle className="h-4 w-4 text-indigo-400 mt-0.5 shrink-0" />
+        <div className="text-xs text-indigo-300/80">
+          <strong className="text-indigo-300">Tags</strong> drive automation. When a tag is added to a contact (manually, via CSV import, or by an AI agent mid-call), any campaign listening for that tag will enroll the contact automatically.
+        </div>
+      </div>
+
+      {error && (
+        <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
+          <X className="h-4 w-4 flex-shrink-0 mt-0.5" />
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400/60 hover:text-red-400">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Create new */}
+      <Section title="Create Tag" description="New tags are available immediately across contacts, campaigns, and CSV imports">
+        <div className="flex gap-2 items-center">
+          <input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
+            placeholder="e.g. hot-lead"
+            className="flex-1 h-10 rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-300 placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none"
+          />
+          <div className="flex gap-1">
+            {TAG_DEFAULT_COLORS.map((c) => (
+              <button
+                key={c}
+                onClick={() => setNewColor(c)}
+                className={cn(
+                  "h-7 w-7 rounded-full border-2 transition-all",
+                  newColor === c ? "border-white scale-110" : "border-transparent hover:scale-105",
+                )}
+                style={{ backgroundColor: c }}
+                aria-label={`Pick color ${c}`}
+              />
+            ))}
+          </div>
+          <button
+            onClick={handleCreate}
+            disabled={!newName.trim() || creating}
+            className="flex items-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 px-3 py-2 text-sm font-medium text-white transition-colors"
+          >
+            {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+            Create
+          </button>
+        </div>
+      </Section>
+
+      {/* Tag list */}
+      <div className="rounded-xl border border-zinc-800 overflow-hidden">
+        {tags.length === 0 ? (
+          <div className="p-8 text-center text-sm text-zinc-500">
+            No tags yet. Create your first tag above.
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-zinc-900/60 text-xs uppercase tracking-wide text-zinc-500">
+              <tr>
+                <th className="px-4 py-2 text-left font-semibold">Tag</th>
+                <th className="px-4 py-2 text-left font-semibold">Color</th>
+                <th className="px-4 py-2 text-right font-semibold">Contacts</th>
+                <th className="px-4 py-2 text-right font-semibold">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-800">
+              {tags.map((t) => {
+                const isSystem = SYSTEM_TAGS.has(t.name.toLowerCase());
+                return (
+                  <tr key={t.id} className="hover:bg-zinc-900/30">
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => handleRename(t.id, t.name)}
+                        disabled={isSystem}
+                        className={cn(
+                          "inline-flex items-center gap-2 rounded-full border px-2.5 py-0.5 text-xs font-medium",
+                          isSystem ? "cursor-not-allowed" : "hover:opacity-80",
+                        )}
+                        style={{
+                          borderColor: (t.color ?? "#6366f1") + "55",
+                          backgroundColor: (t.color ?? "#6366f1") + "15",
+                          color: t.color ?? "#6366f1",
+                        }}
+                        title={isSystem ? "System tag — cannot be renamed" : "Click to rename"}
+                      >
+                        {t.name}
+                        {isSystem && <span className="text-[10px] opacity-60">(system)</span>}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-1">
+                        {TAG_DEFAULT_COLORS.map((c) => (
+                          <button
+                            key={c}
+                            onClick={() => handleColor(t.id, c)}
+                            className={cn(
+                              "h-5 w-5 rounded-full border-2 transition-all",
+                              (t.color ?? "") === c ? "border-white" : "border-transparent hover:scale-110",
+                            )}
+                            style={{ backgroundColor: c }}
+                          />
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right text-zinc-400">{t.usage_count}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => handleDelete(t)}
+                        disabled={isSystem}
+                        className="inline-flex items-center gap-1 text-xs text-red-400/80 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Delete
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const [tab, setTab] = useState<Tab>("organization");
   const [orgName, setOrgName] = useState("");
@@ -620,6 +862,9 @@ export default function SettingsPage() {
 
       {/* Automations */}
       {tab === "automations" && <AutomationsTab />}
+
+      {/* Tags */}
+      {tab === "tags" && <TagsTab />}
 
       {/* Security */}
       {tab === "security" && (
