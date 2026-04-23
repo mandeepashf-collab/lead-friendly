@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useCallTranscript } from "@/hooks/useCallTranscript";
 import { useCallAnnotations } from "@/hooks/useCallAnnotations";
 import { useRecordingUrl } from "@/hooks/use-recording-url";
+import { ConvertAnnotationToEvalButton } from "@/components/agents/ConvertAnnotationToEvalButton";
 
 interface CallSummary {
   id: string;
@@ -58,6 +59,19 @@ export function AnnotatePage({ agentId }: { agentId: string }) {
   const [annotatingLine, setAnnotatingLine] = useState<number | null>(null);
   const [annotationTypeUi, setAnnotationTypeUi] = useState<"BAD" | "GOOD" | "COMMENT">("BAD");
   const [annotationText, setAnnotationText] = useState("");
+
+  // ── Converted-to-eval lookup (annotation id -> eval id) ────────
+  // Drives the "Converted ✓" variant on the ConvertAnnotationToEvalButton
+  // so users don't convert the same annotation twice.
+  const [convertedMap, setConvertedMap] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!agentId) return;
+    fetch(`/api/agents/${agentId}/converted-annotations`)
+      .then((r) => r.json())
+      .then((d) => setConvertedMap(d.annotationToEval ?? {}))
+      .catch(() => {});
+  }, [agentId]);
 
   // ── Audio player state ─────────────────────────────────────────
   const [playing, setPlaying] = useState(false);
@@ -441,6 +455,22 @@ export function AnnotatePage({ agentId }: { agentId: string }) {
                         <p className="text-xs opacity-80">
                           {existingAnnotation.title ?? ""}
                         </p>
+                        <div className="mt-2 flex items-center justify-end">
+                          <ConvertAnnotationToEvalButton
+                            annotationId={existingAnnotation.id}
+                            agentId={agentId}
+                            transcriptLine={existingAnnotation.transcript_line}
+                            annotationTitle={existingAnnotation.title}
+                            promptCorrection={existingAnnotation.prompt_correction}
+                            alreadyConverted={!!convertedMap[existingAnnotation.id]}
+                            onConverted={(evalId) =>
+                              setConvertedMap((m) => ({
+                                ...m,
+                                [existingAnnotation.id]: evalId,
+                              }))
+                            }
+                          />
+                        </div>
                       </div>
                     )}
 

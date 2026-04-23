@@ -1,168 +1,768 @@
 "use client";
-import { useState } from "react";
-import { Plus, Play, Pencil, Trash2, Loader2, CheckCircle2, XCircle } from "lucide-react";
 
-interface Eval {
+// src/components/agents/EvalsPage.tsx
+//
+// Real evals UI. Replaces the fully-mocked version that shipped with DEFAULT_EVALS + Math.random().
+// Props unchanged (agentId, systemPrompt) so the parent page does not need edits.
+//
+// Stage 2 of P1 #3. See architecture memo §4.
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  BarChart2,
+  CheckCircle2,
+  Loader2,
+  Pencil,
+  Play,
+  Plus,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+  User,
+  X,
+  XCircle,
+  AlertCircle,
+  MessageSquareQuote,
+  ChevronDown,
+} from "lucide-react";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Types — mirror the API GET response
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface EvalRow {
   id: string;
+  agent_id: string;
   title: string;
-  tag: "BAD" | "COMMENT" | "GOOD";
-  priority: "High Priority" | "Low Priority";
-  status: "NOT RUN" | "PASS" | "FAIL" | "RUNNING";
+  criterion: string;
+  source: "user" | "ai_generated" | "from_annotation";
+  source_ref: string | null;
+  generation_batch_id: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  latest_run: {
+    verdict: "PASS" | "FAIL" | "INCONCLUSIVE";
+    reason: string;
+    created_at: string;
+  } | null;
 }
 
-const DEFAULT_EVALS: Eval[] = [
-  { id: "1", title: "differentiate between human voice and google voice wait for human...", tag: "BAD", priority: "Low Priority", status: "NOT RUN" },
-  { id: "2", title: "do not transfer calls if you already booked appointment", tag: "BAD", priority: "High Priority", status: "NOT RUN" },
-  { id: "3", title: "don't change tone keep flow in same tone", tag: "BAD", priority: "High Priority", status: "NOT RUN" },
-  { id: "4", title: "any question customer have which is not in script go availability to b...", tag: "COMMENT", priority: "High Priority", status: "NOT RUN" },
-  { id: "5", title: "keep the tone in one flow", tag: "BAD", priority: "High Priority", status: "NOT RUN" },
-  { id: "6", title: "too much repetation of available time just ask what date and time cu...", tag: "BAD", priority: "Low Priority", status: "FAIL" },
-  { id: "7", title: "customer is repeating they are on vocation don't repeat availability a...", tag: "BAD", priority: "High Priority", status: "FAIL" },
-  { id: "8", title: "when you hear please stay on line wait for response from user", tag: "BAD", priority: "Low Priority", status: "FAIL" },
-  { id: "9", title: "you must not transfer if appointment is booked, transfer only if cust...", tag: "BAD", priority: "High Priority", status: "FAIL" },
-  { id: "10", title: "once appointment tiem is confirmed keep it quick and short", tag: "BAD", priority: "High Priority", status: "FAIL" },
-  { id: "11", title: "keep is short and quick once client agreed to book appointment", tag: "BAD", priority: "Low Priority", status: "FAIL" },
-  { id: "12", title: "just give 2-3 options about availablity and let them choose and wait ...", tag: "BAD", priority: "High Priority", status: "FAIL" },
-  { id: "13", title: "I N C not inc make it sound separate words", tag: "BAD", priority: "High Priority", status: "FAIL" },
-  { id: "14", title: "it's I N C not inc", tag: "BAD", priority: "High Priority", status: "FAIL" },
-  { id: "15", title: "wait for response when he has available time", tag: "BAD", priority: "Low Priority", status: "FAIL" },
-];
+interface CallOption {
+  id: string;
+  label: string;    // "Apr 23, 2:04 PM — 74s — Brandon → +1253..."
+  duration: number;
+  has_transcript: boolean;
+}
 
-export function EvalsPage({ agentId, systemPrompt }: { agentId: string; systemPrompt: string }) {
-  const [evals, setEvals] = useState<Eval[]>(DEFAULT_EVALS);
-  const [selected, setSelected] = useState<string[]>([]);
-  const [showAdd, setShowAdd] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newTag, setNewTag] = useState<'BAD' | 'COMMENT' | 'GOOD'>('BAD');
-  const [newPriority, setNewPriority] = useState<'High Priority' | 'Low Priority'>('High Priority');
-  const [runningId, setRunningId] = useState<string | null>(null);
+interface Props {
+  agentId: string;
+  systemPrompt: string;
+}
 
-  // Silence unused-var warnings — props are kept for API compatibility
-  void agentId;
-  void systemPrompt;
+// ─────────────────────────────────────────────────────────────────────────────
+// Component
+// ─────────────────────────────────────────────────────────────────────────────
 
-  const toggleSelect = (id: string) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  const toggleAll = () => setSelected(selected.length === evals.length ? [] : evals.map(e => e.id));
+export function EvalsPage({ agentId, systemPrompt }: Props) {
+  const [evals, setEvals] = useState<EvalRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const runEval = async (evalId: string) => {
-    setRunningId(evalId);
-    setEvals(prev => prev.map(e => e.id === evalId ? { ...e, status: 'RUNNING' } : e));
-    await new Promise(r => setTimeout(r, 2000));
-    setEvals(prev => prev.map(e => e.id === evalId ? { ...e, status: Math.random() > 0.5 ? 'PASS' : 'FAIL' } : e));
-    setRunningId(null);
+  // Inline form state
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formTitle, setFormTitle] = useState("");
+  const [formCriterion, setFormCriterion] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  // Run state (per-eval)
+  const [runningEvalId, setRunningEvalId] = useState<string | null>(null);
+  const [runPickerOpenFor, setRunPickerOpenFor] = useState<string | null>(null);
+  const [callOptions, setCallOptions] = useState<CallOption[]>([]);
+  const [callsLoading, setCallsLoading] = useState(false);
+
+  // Generation state
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+
+  // ───── Fetchers ─────
+
+  const loadEvals = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/agents/${agentId}/evals`, {
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setEvals(data.evals ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [agentId]);
+
+  useEffect(() => {
+    loadEvals();
+  }, [loadEvals]);
+
+  // ───── Actions ─────
+
+  const resetForm = () => {
+    setShowForm(false);
+    setEditingId(null);
+    setFormTitle("");
+    setFormCriterion("");
   };
 
-  const deleteEval = (id: string) => setEvals(prev => prev.filter(e => e.id !== id));
-
-  const addEval = () => {
-    if (!newTitle.trim()) return;
-    setEvals(prev => [...prev, { id: String(Date.now()), title: newTitle, tag: newTag, priority: newPriority, status: 'NOT RUN' }]);
-    setNewTitle(''); setShowAdd(false);
+  const openNewForm = () => {
+    setEditingId(null);
+    setFormTitle("");
+    setFormCriterion("");
+    setShowForm(true);
   };
 
-  const tagColors: Record<string, string> = {
-    BAD: 'bg-red-500/10 text-red-400 border-red-500/20',
-    COMMENT: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-    GOOD: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+  const openEditForm = (ev: EvalRow) => {
+    setEditingId(ev.id);
+    setFormTitle(ev.title);
+    setFormCriterion(ev.criterion);
+    setShowForm(true);
   };
 
-  const statusBadge = (status: string) => {
-    if (status === 'NOT RUN') return <span className="text-xs px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">NOT RUN</span>;
-    if (status === 'RUNNING') return <span className="text-xs px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1"><Loader2 className="h-2.5 w-2.5 animate-spin" />RUNNING</span>;
-    if (status === 'PASS') return <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1"><CheckCircle2 className="h-2.5 w-2.5" />PASS</span>;
-    if (status === 'FAIL') return <span className="text-xs px-2 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20 flex items-center gap-1"><XCircle className="h-2.5 w-2.5" />FAIL</span>;
-    return null;
+  const saveEval = async () => {
+    const title = formTitle.trim();
+    const criterion = formCriterion.trim();
+    if (title.length < 2 || criterion.length < 10) {
+      setError(
+        "Title must be at least 2 characters and criterion at least 10 characters.",
+      );
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const res = editingId
+        ? await fetch(`/api/evals/${editingId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title, criterion }),
+          })
+        : await fetch(`/api/agents/${agentId}/evals`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title, criterion, source: "user" }),
+          });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${res.status}`);
+      }
+      resetForm();
+      await loadEvals();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const deleteEval = async (evalId: string) => {
+    if (!confirm("Delete this eval? Past run results will be preserved.")) return;
+    try {
+      const res = await fetch(`/api/evals/${evalId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${res.status}`);
+      }
+      await loadEvals();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const generateStarterEvals = async (replaceLast = false) => {
+    setGenerating(true);
+    setGenError(null);
+    try {
+      const res = await fetch(`/api/agents/${agentId}/evals/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ replaceLastBatch: replaceLast }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${res.status}`);
+      }
+      await loadEvals();
+    } catch (e) {
+      setGenError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const openRunPicker = async (evalId: string) => {
+    setRunPickerOpenFor(evalId);
+    setCallsLoading(true);
+    try {
+      const res = await fetch(`/api/agents/${agentId}/recent-calls?limit=20`);
+      if (res.ok) {
+        const body = await res.json();
+        const opts: CallOption[] = (body.calls ?? []).map((c: any) => ({
+          id: c.id,
+          label: formatCallLabel(c),
+          duration: c.duration_seconds ?? 0,
+          has_transcript: true,
+        }));
+        setCallOptions(opts);
+      } else {
+        setCallOptions([]);
+      }
+    } catch {
+      setCallOptions([]);
+    } finally {
+      setCallsLoading(false);
+    }
+  };
+
+  const runEval = async (evalId: string, callId: string) => {
+    setRunningEvalId(evalId);
+    setRunPickerOpenFor(null);
+    try {
+      const res = await fetch(`/api/evals/${evalId}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ callId }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${res.status}`);
+      }
+      await loadEvals();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRunningEvalId(null);
+    }
+  };
+
+  // ───── Derived ─────
+
+  const hasInstructions = (systemPrompt?.trim().length ?? 0) >= 20;
+  const isEmpty = !loading && evals.length === 0;
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold text-white">Eval Criteria</h2>
-          <span className="text-xs text-zinc-500">{evals.length} evals</span>
+    <div className="flex flex-col h-full p-6 text-white bg-zinc-950">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <div className="flex items-center gap-2">
+            <BarChart2 size={20} className="text-indigo-400" />
+            <h2 className="text-xl font-semibold">Evals</h2>
+          </div>
+          <p className="mt-1 text-sm text-zinc-400">
+            Plain-English criteria judged by Claude against real call transcripts. PASS / FAIL / INCONCLUSIVE.
+          </p>
         </div>
-        <button onClick={() => setShowAdd(!showAdd)}
-          className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors">
-          <Plus className="h-3.5 w-3.5" /> Add Eval
-        </button>
+        <div className="flex items-center gap-2">
+          {!isEmpty && (
+            <>
+              <button
+                onClick={() => generateStarterEvals(false)}
+                disabled={generating || !hasInstructions}
+                title={
+                  !hasInstructions
+                    ? "Agent needs a system prompt before we can generate evals"
+                    : "Generate more starter evals from agent instructions"
+                }
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 rounded-lg hover:bg-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {generating ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Sparkles size={14} />
+                )}
+                {generating ? "Generating…" : "Suggest more"}
+              </button>
+              <button
+                onClick={openNewForm}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-colors"
+              >
+                <Plus size={14} />
+                Add eval
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
-      {showAdd && (
-        <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-4 space-y-3">
-          <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
-            placeholder="Describe what the AI should or shouldn't do..."
-            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
-          <div className="flex gap-3">
-            <select value={newTag} onChange={e => setNewTag(e.target.value as 'BAD'|'COMMENT'|'GOOD')}
-              className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500">
-              <option value="BAD">BAD</option>
-              <option value="COMMENT">COMMENT</option>
-              <option value="GOOD">GOOD</option>
-            </select>
-            <select value={newPriority} onChange={e => setNewPriority(e.target.value as 'High Priority'|'Low Priority')}
-              className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500">
-              <option>High Priority</option>
-              <option>Low Priority</option>
-            </select>
-            <button onClick={addEval} className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-lg transition-colors">Add</button>
-            <button onClick={() => setShowAdd(false)} className="px-4 py-1.5 border border-zinc-700 text-zinc-400 text-sm rounded-lg hover:border-zinc-600 transition-colors">Cancel</button>
-          </div>
+      {/* Errors */}
+      {error && (
+        <div className="flex items-start gap-2 p-3 mb-4 text-sm text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg">
+          <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+          <div className="flex-1">{error}</div>
+          <button onClick={() => setError(null)} className="text-red-300 hover:text-red-200">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      {genError && (
+        <div className="flex items-start gap-2 p-3 mb-4 text-sm text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg">
+          <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+          <div className="flex-1">{genError}</div>
+          <button onClick={() => setGenError(null)} className="text-red-300 hover:text-red-200">
+            <X size={14} />
+          </button>
         </div>
       )}
 
-      <div className="rounded-xl border border-zinc-800 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-zinc-800 bg-zinc-900/50">
-              <th className="w-10 px-4 py-3">
-                <input type="checkbox" checked={selected.length === evals.length && evals.length > 0}
-                  onChange={toggleAll} className="accent-indigo-500" />
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-zinc-500">Title</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-zinc-500">Tags</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-zinc-500">Priority</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-zinc-500">Status</th>
-              <th className="px-4 py-3 w-28"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-800/50">
-            {evals.map(ev => (
-              <tr key={ev.id} className="hover:bg-zinc-800/30 transition-colors">
-                <td className="px-4 py-3">
-                  <input type="checkbox" checked={selected.includes(ev.id)} onChange={() => toggleSelect(ev.id)} className="accent-indigo-500" />
-                </td>
-                <td className="px-4 py-3 text-sm text-zinc-300 max-w-xs">
-                  <span className="truncate block">{ev.title}</span>
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`text-xs px-2 py-0.5 rounded border font-medium ${tagColors[ev.tag]}`}>{ev.tag}</span>
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`text-xs px-2 py-0.5 rounded font-medium ${ev.priority === 'High Priority' ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'text-zinc-400 bg-zinc-800 border border-zinc-700'}`}>
-                    {ev.priority}
-                  </span>
-                </td>
-                <td className="px-4 py-3">{statusBadge(ev.status)}</td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => runEval(ev.id)} disabled={runningId === ev.id}
-                      className="p-1.5 text-zinc-500 hover:text-indigo-400 hover:bg-indigo-500/10 rounded transition-colors">
-                      {runningId === ev.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-                    </button>
-                    <button className="p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700 rounded transition-colors">
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button onClick={() => deleteEval(ev.id)}
-                      className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* Loading */}
+      {loading && (
+        <div className="flex items-center justify-center flex-1 text-zinc-500">
+          <Loader2 size={20} className="animate-spin" />
+          <span className="ml-2 text-sm">Loading evals…</span>
+        </div>
+      )}
+
+      {/* Empty state — the killer-feature moment */}
+      {isEmpty && (
+        <EmptyState
+          hasInstructions={hasInstructions}
+          generating={generating}
+          onGenerate={() => generateStarterEvals(false)}
+          onManual={openNewForm}
+        />
+      )}
+
+      {/* Inline form (add or edit) */}
+      {showForm && (
+        <EvalForm
+          title={formTitle}
+          criterion={formCriterion}
+          editing={editingId !== null}
+          saving={saving}
+          onTitleChange={setFormTitle}
+          onCriterionChange={setFormCriterion}
+          onCancel={resetForm}
+          onSave={saveEval}
+        />
+      )}
+
+      {/* List */}
+      {!loading && !isEmpty && (
+        <div className="flex flex-col flex-1 gap-2 overflow-y-auto">
+          {evals.map((ev) => (
+            <EvalRowCard
+              key={ev.id}
+              ev={ev}
+              running={runningEvalId === ev.id}
+              pickerOpen={runPickerOpenFor === ev.id}
+              callOptions={callOptions}
+              callsLoading={callsLoading && runPickerOpenFor === ev.id}
+              onRunClick={() => openRunPicker(ev.id)}
+              onPickCall={(callId) => runEval(ev.id, callId)}
+              onClosePicker={() => setRunPickerOpenFor(null)}
+              onEdit={() => openEditForm(ev)}
+              onDelete={() => deleteEval(ev.id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-components
+// ─────────────────────────────────────────────────────────────────────────────
+
+function EmptyState({
+  hasInstructions,
+  generating,
+  onGenerate,
+  onManual,
+}: {
+  hasInstructions: boolean;
+  generating: boolean;
+  onGenerate: () => void;
+  onManual: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center flex-1 text-center">
+      <div className="flex items-center justify-center w-16 h-16 mb-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/20">
+        <Sparkles size={28} className="text-indigo-400" />
+      </div>
+      <h3 className="mb-2 text-lg font-semibold text-white">
+        Let Claude draft your evals
+      </h3>
+      <p className="max-w-md mb-6 text-sm text-zinc-400">
+        We ship zero opinionated evals. Give us your agent's instructions and we'll propose 5–10
+        testable criteria tailored to exactly what this agent is supposed to do.
+      </p>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={onGenerate}
+          disabled={generating || !hasInstructions}
+          title={
+            !hasInstructions
+              ? "Add a system prompt to the agent first"
+              : undefined
+          }
+          className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {generating ? (
+            <Loader2 size={16} className="animate-spin" />
+          ) : (
+            <Sparkles size={16} />
+          )}
+          {generating ? "Generating starter evals…" : "✨ Generate starter evals"}
+        </button>
+        <button
+          onClick={onManual}
+          className="px-4 py-2.5 text-sm text-zinc-300 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors"
+        >
+          Write your own
+        </button>
+      </div>
+      {!hasInstructions && (
+        <p className="mt-4 text-xs text-amber-400/80">
+          This agent has no system prompt yet — add one on the Configure tab first.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function EvalForm({
+  title,
+  criterion,
+  editing,
+  saving,
+  onTitleChange,
+  onCriterionChange,
+  onCancel,
+  onSave,
+}: {
+  title: string;
+  criterion: string;
+  editing: boolean;
+  saving: boolean;
+  onTitleChange: (v: string) => void;
+  onCriterionChange: (v: string) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <div className="p-4 mb-4 bg-zinc-900 border border-zinc-800 rounded-xl">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-white">
+          {editing ? "Edit eval" : "New eval"}
+        </h3>
+        <button
+          onClick={onCancel}
+          className="text-zinc-500 hover:text-zinc-300 transition-colors"
+        >
+          <X size={16} />
+        </button>
+      </div>
+      <label className="block mb-3">
+        <span className="block mb-1 text-xs text-zinc-400">Title</span>
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => onTitleChange(e.target.value)}
+          placeholder="e.g. Introduces self with name"
+          maxLength={120}
+          className="w-full px-3 py-2 text-sm text-white bg-zinc-950 border border-zinc-800 rounded-lg focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+        />
+      </label>
+      <label className="block mb-3">
+        <span className="block mb-1 text-xs text-zinc-400">
+          Criterion (plain English — what should always be true?)
+        </span>
+        <textarea
+          value={criterion}
+          onChange={(e) => onCriterionChange(e.target.value)}
+          placeholder="e.g. The agent states their name in the first turn and confirms they are calling from Lead Friendly."
+          maxLength={2000}
+          rows={3}
+          className="w-full px-3 py-2 text-sm text-white bg-zinc-950 border border-zinc-800 rounded-lg resize-none focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+        />
+        <div className="mt-1 text-xs text-zinc-600">
+          {criterion.length} / 2000 · Must be clearly pass/fail from a transcript alone.
+        </div>
+      </label>
+      <div className="flex items-center justify-end gap-2">
+        <button
+          onClick={onCancel}
+          className="px-3 py-1.5 text-sm text-zinc-300 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={onSave}
+          disabled={saving || title.trim().length < 2 || criterion.trim().length < 10}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {saving ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <CheckCircle2 size={14} />
+          )}
+          {saving ? "Saving…" : editing ? "Save changes" : "Add eval"}
+        </button>
       </div>
     </div>
   );
 }
+
+function EvalRowCard({
+  ev,
+  running,
+  pickerOpen,
+  callOptions,
+  callsLoading,
+  onRunClick,
+  onPickCall,
+  onClosePicker,
+  onEdit,
+  onDelete,
+}: {
+  ev: EvalRow;
+  running: boolean;
+  pickerOpen: boolean;
+  callOptions: CallOption[];
+  callsLoading: boolean;
+  onRunClick: () => void;
+  onPickCall: (callId: string) => void;
+  onClosePicker: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="relative p-4 bg-zinc-900 border border-zinc-800 rounded-xl hover:border-zinc-700 transition-colors">
+      <div className="flex items-start gap-3">
+        <VerdictBadge verdict={ev.latest_run?.verdict ?? null} running={running} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="text-sm font-medium text-white">{ev.title}</h3>
+            <SourceBadge source={ev.source} />
+          </div>
+          <p className="mt-1 text-xs text-zinc-400 line-clamp-2">{ev.criterion}</p>
+          {ev.latest_run && (
+            <div
+              className="mt-2 text-xs text-zinc-500"
+              title={ev.latest_run.reason}
+            >
+              Last run{" "}
+              <RelativeTime iso={ev.latest_run.created_at} />
+              {" · "}
+              <span className="italic">"{ev.latest_run.reason}"</span>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onRunClick}
+            disabled={running}
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-white bg-zinc-800 hover:bg-zinc-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            title="Run this eval against a specific call"
+          >
+            {running ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Play size={12} />
+            )}
+            {running ? "Judging…" : "Run"}
+            <ChevronDown size={12} />
+          </button>
+          <button
+            onClick={onEdit}
+            className="p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-md transition-colors"
+            title="Edit"
+          >
+            <Pencil size={13} />
+          </button>
+          <button
+            onClick={onDelete}
+            className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-zinc-800 rounded-md transition-colors"
+            title="Delete"
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+      </div>
+
+      {/* Run-picker dropdown */}
+      {pickerOpen && (
+        <div className="absolute right-4 top-14 z-20 w-80 p-2 bg-zinc-950 border border-zinc-700 rounded-lg shadow-xl">
+          <div className="flex items-center justify-between px-2 py-1 mb-1">
+            <span className="text-xs font-medium text-zinc-300">
+              Run against which call?
+            </span>
+            <button
+              onClick={onClosePicker}
+              className="text-zinc-500 hover:text-zinc-300"
+            >
+              <X size={12} />
+            </button>
+          </div>
+          {callsLoading && (
+            <div className="flex items-center justify-center py-4 text-xs text-zinc-500">
+              <Loader2 size={12} className="animate-spin mr-1.5" />
+              Loading calls…
+            </div>
+          )}
+          {!callsLoading && callOptions.length === 0 && (
+            <div className="px-2 py-3 text-xs text-zinc-500">
+              No calls with transcripts available yet for this agent.
+            </div>
+          )}
+          {!callsLoading && callOptions.length > 0 && (
+            <ul className="max-h-64 overflow-y-auto">
+              {callOptions.map((c) => (
+                <li key={c.id}>
+                  <button
+                    onClick={() => onPickCall(c.id)}
+                    className="w-full px-2 py-1.5 text-left text-xs text-zinc-300 hover:bg-zinc-800 rounded-md transition-colors"
+                  >
+                    {c.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VerdictBadge({
+  verdict,
+  running,
+}: {
+  verdict: "PASS" | "FAIL" | "INCONCLUSIVE" | null;
+  running: boolean;
+}) {
+  if (running) {
+    return (
+      <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-zinc-800 text-zinc-400">
+        <Loader2 size={16} className="animate-spin" />
+      </div>
+    );
+  }
+  if (!verdict) {
+    return (
+      <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-zinc-800 text-zinc-600 text-xs">
+        —
+      </div>
+    );
+  }
+  const styles: Record<string, string> = {
+    PASS: "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20",
+    FAIL: "bg-red-500/15 text-red-400 border border-red-500/20",
+    INCONCLUSIVE: "bg-amber-500/15 text-amber-400 border border-amber-500/20",
+  };
+  const icon: Record<string, React.ReactNode> = {
+    PASS: <CheckCircle2 size={16} />,
+    FAIL: <XCircle size={16} />,
+    INCONCLUSIVE: <AlertCircle size={16} />,
+  };
+  return (
+    <div
+      className={`flex items-center justify-center w-10 h-10 rounded-lg ${styles[verdict]}`}
+    >
+      {icon[verdict]}
+    </div>
+  );
+}
+
+function SourceBadge({
+  source,
+}: {
+  source: "user" | "ai_generated" | "from_annotation";
+}) {
+  const configs = {
+    user: {
+      icon: <User size={10} />,
+      label: "You",
+      cls: "bg-zinc-800 text-zinc-400",
+    },
+    ai_generated: {
+      icon: <Sparkles size={10} />,
+      label: "AI-generated",
+      cls: "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20",
+    },
+    from_annotation: {
+      icon: <MessageSquareQuote size={10} />,
+      label: "From annotation",
+      cls: "bg-purple-500/10 text-purple-400 border border-purple-500/20",
+    },
+  };
+  const c = configs[source];
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded ${c.cls}`}
+    >
+      {c.icon}
+      {c.label}
+    </span>
+  );
+}
+
+function RelativeTime({ iso }: { iso: string }) {
+  const label = useMemo(() => relativeTime(iso), [iso]);
+  return <span title={new Date(iso).toLocaleString()}>{label}</span>;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+function formatCallLabel(c: any): string {
+  const parts: string[] = [];
+  if (c.created_at || c.started_at) {
+    const d = new Date(c.created_at ?? c.started_at);
+    parts.push(
+      d.toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      }),
+    );
+  }
+  if (c.duration_seconds != null) {
+    parts.push(`${Math.round(c.duration_seconds)}s`);
+  }
+  const who = c.to_number || c.from_number || c.contact_name || c.phone;
+  if (who) parts.push(String(who));
+  return parts.join(" · ") || (c.id ? c.id.slice(0, 8) : "(call)");
+}
+
+function relativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  const now = Date.now();
+  const diff = Math.max(0, now - then);
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+// Also expose as default so either import style works.
+export default EvalsPage;

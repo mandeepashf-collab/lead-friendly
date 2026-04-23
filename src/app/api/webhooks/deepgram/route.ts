@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { verifyDeepgramCallbackAuth } from "@/lib/deepgram/verify-auth";
+import { autoRunEvalsOnTranscript } from "@/lib/evals/autoRunOnTranscript";
 
 /**
  * POST /api/webhooks/deepgram
@@ -69,10 +70,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, duplicate: true });
   }
 
-  // Look up call by request_id
+  // Look up call by request_id — include ai_agent_id so we can kick off
+  // auto-eval runs once the transcript lands (P1 #3 Stage 5).
   const { data: call, error: callErr } = await supabaseAdmin
     .from("calls")
-    .select("id")
+    .select("id, ai_agent_id")
     .eq("deepgram_request_id", requestId)
     .maybeSingle();
 
@@ -120,6 +122,18 @@ export async function POST(req: NextRequest) {
   console.log(
     `[deepgram/callback] transcript saved for call ${call.id}, confidence=${confidence}, length=${text.length} chars`,
   );
+
+  // Fire-and-forget: run the agent's active evals against this transcript.
+  // Fans out to Haiku in parallel (capped concurrency). Never awaited — the
+  // webhook must respond 200 to Deepgram promptly.
+  if (call.ai_agent_id) {
+    void autoRunEvalsOnTranscript({
+      callId: call.id,
+      agentId: call.ai_agent_id,
+      transcript: text,
+      durationSeconds: durationSeconds ?? undefined,
+    });
+  }
 
   return NextResponse.json({ ok: true });
 }

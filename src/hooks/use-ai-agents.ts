@@ -129,6 +129,20 @@ export async function createAIAgent(
     .select()
     .single();
 
+  // Fire-and-forget: generate starter evals from agent instructions. Runs on
+  // the server via Haiku (~5-10s); UI does not wait. See P1 #3 Stage 3.
+  // Inlined here rather than imported from @/lib/evals/triggerStarterGeneration
+  // because that module pulls in `crypto` at module load which can't be bundled
+  // into client code.
+  if (data?.id) {
+    fetch(`/api/agents/${data.id}/evals/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+      keepalive: true,
+    }).catch(() => {});
+  }
+
   return { data, error: error?.message || null };
 }
 
