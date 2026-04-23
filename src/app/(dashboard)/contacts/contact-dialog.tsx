@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { X, Loader2, User, Mail, Phone, Building2, MapPin, Globe, Tag } from "lucide-react";
 import { createContact, updateContact } from "@/hooks/use-contacts";
+import { setContactTags } from "@/hooks/use-contact-tags";
 import type { Contact } from "@/types/database";
 
 interface Props {
@@ -50,21 +51,35 @@ export function ContactDialog({ contact, onClose, onSaved }: Props) {
     setSaving(true);
     setError("");
 
-    const payload = {
-      ...form,
-      tags: form.tags
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean),
-    };
+    const nextTags = form.tags
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
 
+    // Write every field EXCEPT tags through the normal contact writer.
+    // Tags go through the RPC so contact_tags stays in sync.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { tags: _formTags, ...rest } = form;
+    const payload = rest;
+
+    let savedContactId: string;
     if (isEdit && contact) {
       const { error } = await updateContact(contact.id, payload);
       if (error) { setError(error); setSaving(false); return; }
+      savedContactId = contact.id;
     } else {
-      const { error } = await createContact(payload);
-      if (error) { setError(error); setSaving(false); return; }
+      const { data, error } = await createContact(payload);
+      if (error || !data) {
+        setError(error || "Failed to create contact");
+        setSaving(false);
+        return;
+      }
+      savedContactId = data.id;
     }
+
+    // Sync tags via RPC. For edit: diff against current. For create: pure add.
+    const currentTags = contact?.tags ?? [];
+    await setContactTags(savedContactId, currentTags, nextTags, "manual");
 
     onSaved();
   };

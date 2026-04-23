@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Plus, User, Target, CheckSquare, Phone, X, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { bulkAddContactTags } from "@/hooks/use-contact-tags";
 import { cn } from "@/lib/utils";
 
 /* ── tiny toast ── */
@@ -64,15 +65,25 @@ function NewContactModal({ onClose, onSuccess }: { onClose: () => void; onSucces
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const { data: profile } = await supabase.from("profiles").select("organization_id").eq("id", user.id).single();
-      await supabase.from("contacts").insert({
+      const tagList = form.tags
+        ? form.tags.split(",").map(t => t.trim()).filter(Boolean)
+        : [];
+      // Insert the contact WITHOUT tags — they go through the RPC so
+      // contact_tags stays in sync for the automation matcher.
+      const { data: inserted, error } = await supabase.from("contacts").insert({
         organization_id: profile?.organization_id,
         first_name: form.first_name || null,
         last_name: form.last_name || null,
         email: form.email || null,
         phone: form.phone || null,
-        tags: form.tags ? form.tags.split(",").map(t => t.trim()).filter(Boolean) : [],
         status: "new",
-      });
+      }).select("id").single();
+      if (error || !inserted) throw error ?? new Error("Insert failed");
+      if (tagList.length) {
+        await bulkAddContactTags(
+          tagList.map(tag => ({ contact_id: inserted.id, tag, source: "manual" as const })),
+        );
+      }
       onSuccess();
     } catch (err) {
       console.error(err);

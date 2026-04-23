@@ -11,6 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useContact, updateContact as updateContactApi, deleteContact } from "@/hooks/use-contacts";
+import { addContactTag, removeContactTag } from "@/hooks/use-contact-tags";
 import { useRecordingUrl } from "@/hooks/use-recording-url";
 import { useCallTranscript } from "@/hooks/useCallTranscript";
 import { useSoftphone } from "@/components/softphone/SoftphoneContext";
@@ -445,16 +446,29 @@ export default function ContactDetailPage() {
     router.push("/people");
   }
 
-  function handleAddTag(e: React.KeyboardEvent<HTMLInputElement>) {
+  async function handleAddTag(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== "Enter" || !tagInput.trim()) return;
-    const newTags = [...(contact.tags || []), tagInput.trim()];
-    saveField({ tags: newTags });
+    const name = tagInput.trim();
     setTagInput("");
+    // Optimistic: append to local state so the chip appears immediately.
+    // The RPC writes to contact_tags; a trigger syncs contacts.tags[].
+    // Next refetch confirms.
+    saveField({ tags: [...(contact.tags || []), name] });
+    const ok = await addContactTag(contact.id, name);
+    if (!ok) {
+      // Rollback on failure
+      saveField({ tags: (contact.tags || []).filter((t: string) => t !== name) });
+    }
   }
 
-  function removeTag(tag: string) {
-    const newTags = (contact.tags || []).filter((t: string) => t !== tag);
-    saveField({ tags: newTags });
+  async function removeTag(tag: string) {
+    // Optimistic remove
+    saveField({ tags: (contact.tags || []).filter((t: string) => t !== tag) });
+    const ok = await removeContactTag(contact.id, tag);
+    if (!ok) {
+      // Rollback on failure
+      saveField({ tags: [...(contact.tags || []), tag] });
+    }
   }
 
   if (contactLoading) {

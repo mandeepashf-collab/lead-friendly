@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 import { X, Upload, FileSpreadsheet, Check, AlertCircle, Loader2, Download } from "lucide-react";
 import { bulkImportContacts } from "@/hooks/use-contacts";
+import { bulkAddContactTags } from "@/hooks/use-contact-tags";
 
 interface Props {
   onClose: () => void;
@@ -138,19 +139,43 @@ export function ImportDialog({ onClose, onImported }: Props) {
   const handleImport = async () => {
     setStep("importing");
 
-    const contacts: ParsedRow[] = parsed.rows.map((row) => {
+    // Build two parallel arrays kept in lockstep with the filter: contacts
+    // WITHOUT tags, and tag lists keyed by the same index. Tags are NOT put on
+    // the contact row — they're RPC'd after insert so contact_tags stays in sync.
+    const tagsByRowIndex: string[][] = [];
+    const contacts: ParsedRow[] = [];
+    for (const row of parsed.rows) {
       const contact: Record<string, unknown> = {};
+      let rowTags: string[] = [];
       Object.entries(mapping).forEach(([csvCol, dbField]) => {
         if (dbField === "tags") {
-          contact[dbField] = row[csvCol]?.split(";").map((t) => t.trim()).filter(Boolean) || [];
+          rowTags = row[csvCol]?.split(";").map((t) => t.trim()).filter(Boolean) || [];
         } else {
           contact[dbField] = row[csvCol] || undefined;
         }
       });
-      return contact as ParsedRow;
-    }).filter((c) => c.first_name || c.email || c.phone); // Must have at least one identifier
+      const c = contact as ParsedRow;
+      if (c.first_name || c.email || c.phone) {
+        contacts.push(c);
+        tagsByRowIndex.push(rowTags);
+      }
+    }
 
     const result = await bulkImportContacts(contacts);
+
+    // Apply tags only when insertedIds aligns 1:1 with the filtered input.
+    // If bulkImportContacts deduped rows internally, insertedIds is shorter
+    // than contacts.length and we can't safely pair tags by index — skip.
+    if (result.insertedIds && result.insertedIds.length === contacts.length) {
+      const pairs: { contact_id: string; tag: string; source: "csv_import" }[] = [];
+      result.insertedIds.forEach((id, idx) => {
+        for (const tag of tagsByRowIndex[idx]) {
+          pairs.push({ contact_id: id, tag, source: "csv_import" });
+        }
+      });
+      if (pairs.length) await bulkAddContactTags(pairs);
+    }
+
     setImportResult({
       count: result.count,
       skipped: result.skipped || 0,
