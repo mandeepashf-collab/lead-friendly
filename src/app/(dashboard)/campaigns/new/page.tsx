@@ -1,10 +1,13 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ArrowLeft, CheckCircle2, Users, Bot, Clock, Rocket } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createCampaign, useAIAgents } from "@/hooks/use-campaigns";
 import { getVoiceDisplayLabel } from "@/lib/voices";
+import { createClient } from "@/lib/supabase/client";
+
+interface TagOption { id: string; name: string; color: string | null; usage_count: number; }
 
 const STEPS = [
   { id: 1, label: "Audience",   icon: Users },
@@ -22,7 +25,7 @@ export default function NewCampaignPage() {
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
-    name: "", description: "", contact_filter: "all",
+    name: "", description: "", tags: [] as string[],
     ai_agent_id: "", start_date: new Date().toISOString().split("T")[0],
     call_from: "09:00", call_to: "17:00",
     days: ["Mon","Tue","Wed","Thu","Fri"],
@@ -30,6 +33,51 @@ export default function NewCampaignPage() {
   });
   const set = (k: keyof typeof form) => (v: unknown) => setForm(f => ({...f,[k]:v}));
   const toggleDay = (d: string) => setForm(f => ({...f, days: f.days.includes(d) ? f.days.filter(x => x !== d) : [...f.days, d]}));
+
+  const [availableTags, setAvailableTags] = useState<TagOption[]>([]);
+  const [audiencePreviewCount, setAudiencePreviewCount] = useState<number | null>(null);
+
+  // Load available tags for the org once
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("tags")
+      .select("id, name, color, usage_count")
+      .order("name", { ascending: true })
+      .then(({ data }) => setAvailableTags((data as TagOption[]) ?? []));
+  }, []);
+
+  // Estimate audience size when tags change. Counts contacts where
+  // tags && form.tags AND do_not_call=false AND phone IS NOT NULL.
+  useEffect(() => {
+    const supabase = createClient();
+    let cancelled = false;
+    const run = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: profile } = await supabase
+        .from("profiles").select("organization_id").eq("id", user.id).single();
+      if (!profile?.organization_id) return;
+
+      let q = supabase
+        .from("contacts")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", profile.organization_id)
+        .eq("do_not_call", false)
+        .not("phone", "is", null)
+        .neq("phone", "");
+      if (form.tags.length) {
+        q = q.overlaps("tags", form.tags);
+      }
+      const { count } = await q;
+      if (!cancelled) setAudiencePreviewCount(count ?? 0);
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [form.tags]);
+
+  const toggleTag = (name: string) =>
+    setForm(f => ({ ...f, tags: f.tags.includes(name) ? f.tags.filter(t => t !== name) : [...f.tags, name] }));
 
   const costPerMin = 0.047;
   const avgMins = 3;
@@ -43,8 +91,14 @@ export default function NewCampaignPage() {
       name: form.name, type: "outbound_call", status,
       ai_agent_id: form.ai_agent_id || null,
       daily_call_limit: form.daily_limit,
+      // contact_filter is a JSONB column; Campaign type doesn't declare it yet.
+      // See diff doc: widening the type is cleaner but out of scope for 1.5.
+      contact_filter: form.tags.length
+        ? { tags: form.tags, tag_match: "any" }
+        : {},
       total_contacted: 0, total_answered: 0, total_appointments: 0,
-    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
 
     if (status === 'active' && form.ai_agent_id && created?.id) {
       try {
@@ -101,14 +155,53 @@ export default function NewCampaignPage() {
             <div><label className="block text-sm font-medium text-zinc-300 mb-1.5">Campaign Name *</label>
               <input value={form.name} onChange={e => set("name")(e.target.value)} placeholder="Q2 Outreach Campaign"
                 className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-300 placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none" /></div>
-            <div><label className="block text-sm font-medium text-zinc-300 mb-1.5">Contact Filter</label>
-              <select value={form.contact_filter} onChange={e => set("contact_filter")(e.target.value)}
-                className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-300 focus:border-indigo-500 focus:outline-none">
-                <option value="all">All Contacts</option>
-                <option value="new">New Only</option>
-                <option value="contacted">Contacted</option>
-                <option value="qualified">Qualified</option>
-              </select></div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-300 mb-1.5">
+                Target by Tags <span className="text-zinc-600 font-normal">(leave empty to target all contacts)</span>
+              </label>
+              {availableTags.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-zinc-800 bg-zinc-950 p-4 text-center text-sm text-zinc-500">
+                  No tags yet. Create tags in{" "}
+                  <button onClick={() => router.push("/settings")} className="text-indigo-400 underline">Settings → Tags</button>
+                  , or leave empty to target everyone.
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950 p-3 min-h-[3rem]">
+                  {availableTags.map(t => {
+                    const active = form.tags.includes(t.name);
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => toggleTag(t.name)}
+                        className={cn(
+                          "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-all",
+                          active ? "ring-2 ring-offset-2 ring-offset-zinc-950" : "opacity-60 hover:opacity-100",
+                        )}
+                        style={{
+                          borderColor: (t.color ?? "#6366f1") + "55",
+                          backgroundColor: (t.color ?? "#6366f1") + "15",
+                          color: t.color ?? "#6366f1",
+                          // @ts-expect-error custom CSS var
+                          "--tw-ring-color": t.color ?? "#6366f1",
+                        }}
+                      >
+                        {t.name}
+                        <span className="text-[10px] opacity-60">{t.usage_count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="mt-2 text-xs text-zinc-500">
+                Match <strong>any</strong> selected tag (OR). Contacts marked Do Not Call are always excluded.
+              </p>
+              {audiencePreviewCount !== null && (
+                <p className="mt-2 text-xs font-medium text-indigo-400">
+                  Estimated audience: {audiencePreviewCount} contact{audiencePreviewCount === 1 ? "" : "s"}
+                </p>
+              )}
+            </div>
             <div><label className="block text-sm font-medium text-zinc-300 mb-1.5">Description</label>
               <textarea value={form.description} onChange={e => set("description")(e.target.value)} rows={3}
                 placeholder="What is this campaign for?"
@@ -190,7 +283,7 @@ export default function NewCampaignPage() {
             <div className="space-y-3">
               {[
                 { label: "Campaign Name", value: form.name || "—" },
-                { label: "Contact Filter", value: form.contact_filter },
+                { label: "Target Tags", value: form.tags.length ? form.tags.join(", ") : "All contacts (no filter)" },
                 { label: "AI Agent", value: agents.find(a => a.id === form.ai_agent_id)?.name || "None selected" },
                 { label: "Start Date", value: form.start_date },
                 { label: "Calling Hours", value: `${form.call_from} – ${form.call_to}` },

@@ -148,7 +148,7 @@ export async function deleteContact(
  */
 export async function bulkImportContacts(
   contacts: Partial<Contact>[]
-): Promise<{ count: number; skipped: number; error: string | null; insertedIds: string[] }> {
+): Promise<{ count: number; skipped: number; error: string | null; insertedIds: (string | null)[] }> {
   const supabase = createClient();
 
   const {
@@ -189,45 +189,70 @@ export async function bulkImportContacts(
   const seenPhones = new Set<string>();
   const seenEmails = new Set<string>();
 
+  // Per-row alignment: dupeMask[i] = true if input row i was deduped and skipped.
+  // We track this so the final insertedIds array aligns 1:1 with the input.
+  const dupeMask: boolean[] = [];
   let skipped = 0;
-  const rows = contacts
-    .map((c) => {
-      const phoneKey = normalizePhone(c.phone as string | null | undefined);
-      const emailKey = normalize(c.email as string | null | undefined);
+  const rows: Record<string, unknown>[] = [];
+  for (const c of contacts) {
+    const phoneKey = normalizePhone(c.phone as string | null | undefined);
+    const emailKey = normalize(c.email as string | null | undefined);
 
-      if ((phoneKey && (existingPhones.has(phoneKey) || seenPhones.has(phoneKey))) ||
-          (emailKey && (existingEmails.has(emailKey) || seenEmails.has(emailKey)))) {
-        skipped++;
-        return null;
-      }
-      if (phoneKey) seenPhones.add(phoneKey);
-      if (emailKey) seenEmails.add(emailKey);
-      return {
-        ...c,
-        organization_id: profile.organization_id,
-        source: c.source || "csv_import",
-      };
-    })
-    .filter(Boolean) as Record<string, unknown>[];
+    const isDupe =
+      (phoneKey && (existingPhones.has(phoneKey) || seenPhones.has(phoneKey))) ||
+      (emailKey && (existingEmails.has(emailKey) || seenEmails.has(emailKey)));
+
+    if (isDupe) {
+      dupeMask.push(true);
+      skipped++;
+      continue;
+    }
+    dupeMask.push(false);
+    if (phoneKey) seenPhones.add(phoneKey);
+    if (emailKey) seenEmails.add(emailKey);
+    rows.push({
+      ...c,
+      organization_id: profile.organization_id,
+      source: c.source || "csv_import",
+    });
+  }
 
   if (rows.length === 0) {
-    return { count: 0, skipped, error: null, insertedIds: [] };
+    // Fill insertedIds with nulls to match input length
+    return { count: 0, skipped, error: null, insertedIds: dupeMask.map(() => null) };
   }
 
   // 3) Insert in chunks of 500 so we don't hit payload limits on huge uploads
   let inserted = 0;
-  const insertedIds: string[] = [];
+  const insertedIdsLinear: string[] = [];
   for (let i = 0; i < rows.length; i += 500) {
     const chunk = rows.slice(i, i + 500);
     const { data, error } = await supabase.from("contacts").insert(chunk).select("id");
     if (error) {
-      return { count: inserted, skipped, error: error.message, insertedIds };
+      // Align what we got so far back onto the dupeMask; later entries are nulls.
+      const aligned = alignInsertedIds(dupeMask, insertedIdsLinear);
+      return { count: inserted, skipped, error: error.message, insertedIds: aligned };
     }
     inserted += data?.length || 0;
     for (const row of data ?? []) {
-      insertedIds.push((row as { id: string }).id);
+      insertedIdsLinear.push((row as { id: string }).id);
     }
   }
 
-  return { count: inserted, skipped, error: null, insertedIds };
+  return { count: inserted, skipped, error: null, insertedIds: alignInsertedIds(dupeMask, insertedIdsLinear) };
+}
+
+/**
+ * Zip dupeMask (same length as input) with linearly-inserted IDs so the result
+ * array aligns 1:1 with the input: insertedIds[i] === null iff input row i was
+ * deduped, otherwise the inserted contact's UUID.
+ */
+function alignInsertedIds(dupeMask: boolean[], linearIds: string[]): (string | null)[] {
+  const out: (string | null)[] = [];
+  let cursor = 0;
+  for (const isDupe of dupeMask) {
+    if (isDupe) out.push(null);
+    else out.push(linearIds[cursor++] ?? null);
+  }
+  return out;
 }

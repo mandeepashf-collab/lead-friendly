@@ -67,17 +67,35 @@ export async function POST(req: NextRequest) {
       if (c.contact_id) calledSet.add(c.contact_id);
     });
 
-    // Fetch candidates scoped to this org, with a phone, not do-not-call,
-    // and not yet called by this campaign. Fetch more than the daily limit
-    // because we'll filter out the already-called ones client-side.
     const dailyLimit = campaign.daily_call_limit || 10;
-    const { data: contacts } = await supabase
-      .from('contacts')
-      .select('id, phone, status')
-      .eq('organization_id', campaign.organization_id)
-      .not('phone', 'is', null)
-      .neq('status', 'do_not_contact')
-      .limit(dailyLimit * 3);
+
+    // Resolve dialable contact IDs via RPC. This applies:
+    //   - contact_filter.tags (OR semantics)
+    //   - campaigns.snapshot_at (post-launch tags excluded)
+    //   - do_not_call=false (TCPA baseline)
+    //   - phone IS NOT NULL AND phone <> ''
+    // Does NOT dedupe against already-called contacts — that's done below
+    // against `calledSet`.
+    const { data: resolvedIds, error: resolveErr } = await supabase
+      .rpc('resolve_campaign_contacts', { p_campaign_id: campaign_id });
+    if (resolveErr) {
+      console.error('resolve_campaign_contacts failed:', resolveErr);
+      return NextResponse.json({ ok: false, error: resolveErr.message }, { status: 500 });
+    }
+    const resolvedIdList = (resolvedIds as { resolve_campaign_contacts: string }[] | null)
+      ?.map(r => r.resolve_campaign_contacts)
+      ?? (resolvedIds as unknown as string[] | null)
+      ?? [];
+
+    // Now pull phone/id for those contact IDs
+    let contacts: { id: string; phone: string | null }[] = [];
+    if (resolvedIdList.length) {
+      const { data: contactRows } = await supabase
+        .from('contacts')
+        .select('id, phone')
+        .in('id', resolvedIdList);
+      contacts = contactRows ?? [];
+    }
 
     const toCall = (contacts || [])
       .filter((c) => c.phone && !calledSet.has(c.id))

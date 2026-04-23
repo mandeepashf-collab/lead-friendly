@@ -182,18 +182,16 @@ export function ImportDialog({ onClose, onImported }: Props) {
 
     const result = await bulkImportContacts(contacts);
 
-    // Apply tags only when insertedIds aligns 1:1 with the filtered input.
-    // If bulkImportContacts deduped rows internally, insertedIds is shorter
-    // than contacts.length and we can't safely pair tags by index — skip.
-    if (result.insertedIds && result.insertedIds.length === contacts.length) {
-      const pairs: { contact_id: string; tag: string; source: "csv_import" }[] = [];
-      result.insertedIds.forEach((id, idx) => {
-        for (const tag of tagsByRowIndex[idx]) {
-          pairs.push({ contact_id: id, tag, source: "csv_import" });
-        }
-      });
-      if (pairs.length) await bulkAddContactTags(pairs);
-    }
+    // insertedIds is now aligned 1:1 with input (nulls mark deduped rows).
+    // Apply tags only to rows that actually inserted.
+    const pairs: { contact_id: string; tag: string; source: "csv_import" }[] = [];
+    result.insertedIds.forEach((id, idx) => {
+      if (!id) return; // deduped row — skip, no contact to tag
+      for (const tag of tagsByRowIndex[idx]) {
+        pairs.push({ contact_id: id, tag, source: "csv_import" });
+      }
+    });
+    if (pairs.length) await bulkAddContactTags(pairs);
 
     setImportResult({
       count: result.count,

@@ -136,6 +136,25 @@ export default function CampaignResultsPage() {
         </div>
       )}
 
+      {/* Target tags (display-only in 1.5; edit deferred) */}
+      {Array.isArray((campaign as unknown as { contact_filter?: { tags?: string[] } }).contact_filter?.tags) &&
+       ((campaign as unknown as { contact_filter: { tags: string[] } }).contact_filter.tags).length > 0 && (
+        <div className="flex items-center gap-4 rounded-xl border border-zinc-800 bg-zinc-900/50 px-5 py-3">
+          <div className="flex-1">
+            <p className="text-xs text-zinc-500">Target Tags</p>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {(campaign as unknown as { contact_filter: { tags: string[] } }).contact_filter.tags.map((tagName) => (
+                <span key={tagName}
+                  className="inline-flex items-center rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-0.5 text-xs font-medium text-indigo-300">
+                  {tagName}
+                </span>
+              ))}
+            </div>
+          </div>
+          <span className="text-[10px] uppercase tracking-wider text-zinc-600">OR match</span>
+        </div>
+      )}
+
       {/* Call log */}
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 overflow-hidden">
         <div className="px-4 py-3 border-b border-zinc-800">
