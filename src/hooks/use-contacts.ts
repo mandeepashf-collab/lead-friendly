@@ -148,13 +148,13 @@ export async function deleteContact(
  */
 export async function bulkImportContacts(
   contacts: Partial<Contact>[]
-): Promise<{ count: number; skipped: number; error: string | null }> {
+): Promise<{ count: number; skipped: number; error: string | null; insertedIds: string[] }> {
   const supabase = createClient();
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return { count: 0, skipped: 0, error: "Not authenticated" };
+  if (!user) return { count: 0, skipped: 0, error: "Not authenticated", insertedIds: [] };
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -162,7 +162,7 @@ export async function bulkImportContacts(
     .eq("id", user.id)
     .single();
 
-  if (!profile) return { count: 0, skipped: 0, error: "No profile found" };
+  if (!profile) return { count: 0, skipped: 0, error: "No profile found", insertedIds: [] };
 
   // Normalize phones to digits-only for matching (store original in phone field)
   const normalize = (s: string | undefined | null) =>
@@ -211,19 +211,23 @@ export async function bulkImportContacts(
     .filter(Boolean) as Record<string, unknown>[];
 
   if (rows.length === 0) {
-    return { count: 0, skipped, error: null };
+    return { count: 0, skipped, error: null, insertedIds: [] };
   }
 
   // 3) Insert in chunks of 500 so we don't hit payload limits on huge uploads
   let inserted = 0;
+  const insertedIds: string[] = [];
   for (let i = 0; i < rows.length; i += 500) {
     const chunk = rows.slice(i, i + 500);
     const { data, error } = await supabase.from("contacts").insert(chunk).select("id");
     if (error) {
-      return { count: inserted, skipped, error: error.message };
+      return { count: inserted, skipped, error: error.message, insertedIds };
     }
     inserted += data?.length || 0;
+    for (const row of data ?? []) {
+      insertedIds.push((row as { id: string }).id);
+    }
   }
 
-  return { count: inserted, skipped, error: null };
+  return { count: inserted, skipped, error: null, insertedIds };
 }
