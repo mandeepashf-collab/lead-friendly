@@ -28,47 +28,66 @@ interface ParsedRow {
 
 /**
  * Parse a CSV string respecting quoted fields, escaped quotes (""), and
- * newlines inside quoted values. Handles both `,` and `\t` as delimiters
- * (auto-detected from the first unquoted separator on the header line).
+ * newlines inside quoted values. Auto-detects delimiter among `,`, `\t`,
+ * `;`, `|` by picking the one with the most occurrences on the header line.
+ * Strips UTF-8 BOM. Falls back to comma if detection produces a single-
+ * column result that contains commas (common Google Sheets export quirk).
  */
 function parseCSV(text: string): { headers: string[]; rows: Record<string, string>[] } {
   if (!text.trim()) return { headers: [], rows: [] };
 
-  // Auto-detect delimiter: prefer tab if it appears before any comma in the first line
-  const firstLine = text.slice(0, text.indexOf("\n") === -1 ? text.length : text.indexOf("\n"));
-  const firstTab = firstLine.indexOf("\t");
-  const firstComma = firstLine.indexOf(",");
-  const delim = (firstTab !== -1 && (firstComma === -1 || firstTab < firstComma)) ? "\t" : ",";
+  // Strip UTF-8 BOM if present
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
 
-  const records: string[][] = [];
-  let cur: string[] = [];
-  let field = "";
-  let inQuotes = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (inQuotes) {
-      if (c === '"') {
-        if (text[i + 1] === '"') { field += '"'; i++; }
-        else { inQuotes = false; }
-      } else {
-        field += c;
-      }
-    } else {
-      if (c === '"') { inQuotes = true; }
-      else if (c === delim) { cur.push(field); field = ""; }
-      else if (c === "\n" || c === "\r") {
-        // End of record (but skip empty lines). A \r\n pair counts once.
-        if (field !== "" || cur.length > 0) {
-          cur.push(field); records.push(cur); cur = []; field = "";
+  const parseWithDelim = (srcText: string, delim: string) => {
+    const records: string[][] = [];
+    let cur: string[] = [];
+    let field = "";
+    let inQuotes = false;
+    for (let i = 0; i < srcText.length; i++) {
+      const c = srcText[i];
+      if (inQuotes) {
+        if (c === '"') {
+          if (srcText[i + 1] === '"') { field += '"'; i++; }
+          else { inQuotes = false; }
+        } else {
+          field += c;
         }
-        if (c === "\r" && text[i + 1] === "\n") i++;
       } else {
-        field += c;
+        if (c === '"') { inQuotes = true; }
+        else if (c === delim) { cur.push(field); field = ""; }
+        else if (c === "\n" || c === "\r") {
+          if (field !== "" || cur.length > 0) {
+            cur.push(field); records.push(cur); cur = []; field = "";
+          }
+          if (c === "\r" && srcText[i + 1] === "\n") i++;
+        } else {
+          field += c;
+        }
       }
     }
+    if (field !== "" || cur.length > 0) { cur.push(field); records.push(cur); }
+    return records;
+  };
+
+  // Detect delimiter by count on first line
+  const firstLineEnd = text.indexOf("\n") === -1 ? text.length : text.indexOf("\n");
+  const firstLine = text.slice(0, firstLineEnd).replace(/\r$/, "");
+  const counts: Record<string, number> = {
+    ",":  (firstLine.match(/,/g) ?? []).length,
+    "\t": (firstLine.match(/\t/g) ?? []).length,
+    ";":  (firstLine.match(/;/g) ?? []).length,
+    "|":  (firstLine.match(/\|/g) ?? []).length,
+  };
+  const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+  let delim = best[1] > 0 ? best[0] : ",";
+
+  let records = parseWithDelim(text, delim);
+
+  // Defensive fallback: one-column result that contains commas ⇒ re-parse with ","
+  if (records.length > 0 && records[0].length === 1 && records[0][0].includes(",") && delim !== ",") {
+    records = parseWithDelim(text, ",");
   }
-  // Flush last field
-  if (field !== "" || cur.length > 0) { cur.push(field); records.push(cur); }
 
   if (records.length === 0) return { headers: [], rows: [] };
 

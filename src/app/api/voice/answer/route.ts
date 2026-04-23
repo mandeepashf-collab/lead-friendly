@@ -61,6 +61,7 @@ async function tagContact(contactId: string | null | undefined, tag: string): Pr
     const { error } = await supabaseAdmin.rpc("add_contact_tag", {
       p_contact_id: contactId,
       p_tag: tag,
+      p_source: "automation",
     });
     if (error) {
       console.error(`[tagContact] rpc failed for contact=${contactId} tag=${tag}:`, error.message);

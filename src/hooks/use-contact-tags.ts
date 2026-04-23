@@ -36,6 +36,7 @@ export interface BulkTagPair {
 export async function addContactTag(
   contactId: string,
   tag: string,
+  source: TagSource = "manual",
 ): Promise<boolean> {
   const trimmed = tag.trim();
   if (!trimmed) return false;
@@ -44,6 +45,7 @@ export async function addContactTag(
   const { error } = await supabase.rpc("add_contact_tag", {
     p_contact_id: contactId,
     p_tag: trimmed,
+    p_source: source,
   });
   if (error) {
     console.error("addContactTag failed:", error);
