@@ -37,9 +37,23 @@ interface MediaDeviceOption {
   label: string;
 }
 
+interface DockPosition {
+  x: number;
+  y: number;
+}
+
 const LAST_USED_NUMBER_KEY = "softphone:lastFromNumber";
 const MIC_PREF_KEY = "softphone:micDeviceId";
+const DOCK_POSITION_KEY = "softphone:dockPosition";
 const BROADCAST_CHANNEL = "leadfriendly-softphone";
+
+// Approx dock sizes for viewport clamping. Idle pill is ~160x40; expanded
+// dock is 360 wide and grows with content (body varies by state). We use
+// generous estimates so the dock never ends up even partially off-screen.
+const EXPANDED_DOCK_WIDTH = 360;
+const EXPANDED_DOCK_HEIGHT = 500;
+const IDLE_PILL_WIDTH = 160;
+const IDLE_PILL_HEIGHT = 40;
 
 const DTMF_KEYS = [
   ["1", "2", "3"],
@@ -82,6 +96,23 @@ export function Softphone() {
   const [mics, setMics] = useState<MediaDeviceOption[]>([]);
   const [selectedMicId, setSelectedMicId] = useState<string>("");
   const [showSettings, setShowSettings] = useState(false);
+
+  // ── Drag state ─────────────────────────────────────────────
+  //
+  // When position is null → use default CSS (bottom-6 right-6).
+  // When position is set  → absolute top/left pixel coords from drag.
+  //
+  // We don't track width/height explicitly — we just use constants above for
+  // clamping. This keeps the state shape small and avoids layout reads during
+  // drag which would tank framerate.
+  const [position, setPosition] = useState<DockPosition | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef<{
+    mouseX: number;
+    mouseY: number;
+    dockX: number;
+    dockY: number;
+  } | null>(null);
 
   // Refs for mutable objects (Room, timers, track)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -239,6 +270,128 @@ export function Softphone() {
   useEffect(() => {
     setInCall(dockState === "connected" || dockState === "dialing");
   }, [dockState, setInCall]);
+
+  // ── Drag: hydrate saved position from localStorage ───────────
+  //
+  // Runs once on mount. If the stored position is now off-screen (user
+  // resized their window since last session), clamp into the viewport so
+  // the dock is always reachable.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem(DOCK_POSITION_KEY);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as DockPosition;
+      if (typeof parsed.x !== "number" || typeof parsed.y !== "number") return;
+      setPosition(clampToViewport(parsed, EXPANDED_DOCK_WIDTH, EXPANDED_DOCK_HEIGHT));
+    } catch {
+      // Malformed — ignore, fall back to default bottom-right
+    }
+  }, []);
+
+  // ── Drag: re-clamp on window resize ──────────────────────────
+  //
+  // If the user resizes the window smaller and the dock is at the edge,
+  // it could end up off-screen. Re-clamp whenever the viewport changes.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = () => {
+      setPosition((current) => {
+        if (!current) return current;
+        return clampToViewport(current, EXPANDED_DOCK_WIDTH, EXPANDED_DOCK_HEIGHT);
+      });
+    };
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+
+  // ── Drag: mousemove / mouseup listeners (only attached while dragging) ──
+  //
+  // We attach to window (not the dock) so the drag keeps working even if
+  // the cursor leaves the dock briefly. Listeners are removed on mouseup
+  // to avoid processing mousemove events when the user isn't dragging.
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const onMove = (e: MouseEvent) => {
+      if (!dragStartRef.current) return;
+      const dx = e.clientX - dragStartRef.current.mouseX;
+      const dy = e.clientY - dragStartRef.current.mouseY;
+      const newPos = {
+        x: dragStartRef.current.dockX + dx,
+        y: dragStartRef.current.dockY + dy,
+      };
+      // Clamp on every frame so the dock can't be dragged off-screen
+      const width = expanded || dockState !== "idle" ? EXPANDED_DOCK_WIDTH : IDLE_PILL_WIDTH;
+      const height = expanded || dockState !== "idle" ? EXPANDED_DOCK_HEIGHT : IDLE_PILL_HEIGHT;
+      setPosition(clampToViewport(newPos, width, height));
+    };
+
+    const onUp = () => {
+      setIsDragging(false);
+      dragStartRef.current = null;
+      // Persist whatever position we settled on
+      setPosition((current) => {
+        if (current && typeof window !== "undefined") {
+          try {
+            window.localStorage.setItem(DOCK_POSITION_KEY, JSON.stringify(current));
+          } catch {
+            // localStorage full or disabled — silently skip persistence
+          }
+        }
+        return current;
+      });
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [isDragging, expanded, dockState]);
+
+  // ── Drag: handle mousedown on drag handle ───────────────────
+  //
+  // Called from the header element's onMouseDown. We DO NOT call
+  // preventDefault unconditionally — if the user is clicking a button inside
+  // the header (Settings, Close), let the click happen. We only start a drag
+  // when the target is the handle itself (not a button within it).
+  const handleDragStart = useCallback(
+    (e: React.MouseEvent<HTMLElement>) => {
+      // If the click landed on a button inside the header, don't start drag.
+      // data-no-drag on those buttons is our signal.
+      const target = e.target as HTMLElement;
+      if (target.closest("[data-no-drag]")) return;
+
+      // Compute starting dock position. If position is null (first time),
+      // materialize it from the current rendered bounding rect so dragging
+      // picks up from wherever the default CSS placed it.
+      const dockEl = e.currentTarget.closest("[data-softphone-dock]") as HTMLElement | null;
+      let startPos: DockPosition;
+      if (position) {
+        startPos = position;
+      } else if (dockEl) {
+        const rect = dockEl.getBoundingClientRect();
+        startPos = { x: rect.left, y: rect.top };
+        setPosition(startPos);
+      } else {
+        // Fallback — shouldn't happen in practice
+        startPos = { x: window.innerWidth - EXPANDED_DOCK_WIDTH - 24, y: window.innerHeight - EXPANDED_DOCK_HEIGHT - 24 };
+        setPosition(startPos);
+      }
+
+      dragStartRef.current = {
+        mouseX: e.clientX,
+        mouseY: e.clientY,
+        dockX: startPos.x,
+        dockY: startPos.y,
+      };
+      setIsDragging(true);
+      e.preventDefault();
+    },
+    [position],
+  );
 
   // ── Core actions ─────────────────────────────────────────────
 
@@ -485,24 +638,44 @@ export function Softphone() {
     return `${m}:${s.toString().padStart(2, "0")}`;
   }, [elapsedSeconds]);
 
+  // Position style — null = use default CSS (bottom-6 right-6), otherwise
+  // absolute pixel coords from drag state. We use inline style for the
+  // dynamic case so Tailwind doesn't need to know about runtime coords.
+  const positionStyle: React.CSSProperties = position
+    ? { top: `${position.y}px`, left: `${position.x}px` }
+    : { bottom: "1.5rem", right: "1.5rem" };
+
   // ── Render ──────────────────────────────────────────────────
 
   // Duplicate-tab guard: show a minimal advisory instead of a functional dock
   if (!isPrimaryTab) {
     return (
-      <div className="fixed bottom-6 right-6 z-50 max-w-xs rounded-lg border border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-lg">
+      <div
+        className="fixed z-50 max-w-xs rounded-lg border border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-lg"
+        style={positionStyle}
+      >
         Softphone is open in another tab. Switch to that tab to place calls.
       </div>
     );
   }
 
-  // Idle pill — minimal footprint
+  // Idle pill — minimal footprint, draggable via onMouseDown on the button
   if (dockState === "idle" && !expanded) {
     return (
       <button
-        onClick={() => setExpanded(true)}
-        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-md hover:bg-slate-50"
-        aria-label="Open softphone"
+        data-softphone-dock
+        onClick={() => {
+          // Don't open dock if this click is the end of a drag
+          if (isDragging) return;
+          setExpanded(true);
+        }}
+        onMouseDown={handleDragStart}
+        style={{ ...positionStyle, cursor: isDragging ? "grabbing" : "grab" }}
+        className={cn(
+          "fixed z-50 flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-md hover:bg-slate-50",
+          isDragging && "shadow-xl",
+        )}
+        aria-label="Open softphone (drag to move)"
       >
         <span className="h-2 w-2 rounded-full bg-emerald-500" />
         <Phone className="h-4 w-4" />
@@ -513,9 +686,22 @@ export function Softphone() {
 
   // Expanded dock
   return (
-    <div className="fixed bottom-6 right-6 z-50 w-[360px] rounded-xl border border-slate-200 bg-white shadow-2xl">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+    <div
+      data-softphone-dock
+      style={positionStyle}
+      className={cn(
+        "fixed z-50 w-[360px] rounded-xl border border-slate-200 bg-white shadow-2xl",
+        isDragging && "shadow-[0_20px_50px_rgba(0,0,0,0.3)]",
+      )}
+    >
+      {/* Header — also the drag handle. Buttons inside use data-no-drag to
+          opt out of starting a drag when clicked. */}
+      <div
+        onMouseDown={handleDragStart}
+        style={{ cursor: isDragging ? "grabbing" : "grab" }}
+        className="flex items-center justify-between border-b border-slate-100 px-4 py-3 select-none"
+        title="Drag to move"
+      >
         <div className="flex items-center gap-2">
           <span
             className={cn(
@@ -543,6 +729,7 @@ export function Softphone() {
           {(dockState === "ready" || dockState === "error" || dockState === "idle") && (
             <>
               <button
+                data-no-drag
                 onClick={() => setShowSettings((s) => !s)}
                 className="rounded p-1 text-slate-500 hover:bg-slate-100"
                 aria-label="Settings"
@@ -550,6 +737,7 @@ export function Softphone() {
                 <Settings2 className="h-4 w-4" />
               </button>
               <button
+                data-no-drag
                 onClick={closeDock}
                 className="rounded p-1 text-slate-500 hover:bg-slate-100"
                 aria-label="Close"
@@ -730,4 +918,27 @@ export function Softphone() {
       </div>
     </div>
   );
+}
+
+// ── Helpers ──────────────────────────────────────────────────
+
+/**
+ * Clamp a proposed dock position to the viewport with a small inset so the
+ * dock can't be dragged off-screen. We use the passed width/height hints
+ * (varies between expanded dock and idle pill) rather than measuring the
+ * real element — measuring during drag would force layout on every frame.
+ */
+function clampToViewport(
+  pos: DockPosition,
+  width: number,
+  height: number,
+): DockPosition {
+  if (typeof window === "undefined") return pos;
+  const inset = 8; // keep a tiny gap from the viewport edges
+  const maxX = Math.max(inset, window.innerWidth - width - inset);
+  const maxY = Math.max(inset, window.innerHeight - height - inset);
+  return {
+    x: Math.max(inset, Math.min(pos.x, maxX)),
+    y: Math.max(inset, Math.min(pos.y, maxY)),
+  };
 }
