@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSoftphone, type SoftphoneContact } from "./SoftphoneContext";
+import { usePathname } from "next/navigation";
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -90,6 +91,25 @@ export function Softphone() {
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const broadcastRef = useRef<BroadcastChannel | null>(null);
   const audioElementsRef = useRef<HTMLAudioElement[]>([]);
+
+  // ── Route-gate: hide dock on AI Agent pages so it doesn't block UI ──
+  // The Annotate and Evals tabs have form controls in the bottom-right
+  // corner that the fixed-position dock overlays. Hiding the dock entirely
+  // on these routes is cleaner than per-page z-index gymnastics.
+  //
+  // Critical exception: if a call is in progress, we MUST keep the dock
+  // mounted regardless of pathname — otherwise the user has no way to hang
+  // up mid-call if they navigate to an agent page. The isCallActive check
+  // preserves this safety.
+  const pathname = usePathname();
+  const isCallActive =
+    dockState === "dialing" ||
+    dockState === "connected" ||
+    dockState === "ending";
+  const isOnAgentPage = pathname?.startsWith("/ai-agents") ?? false;
+  if (isOnAgentPage && !isCallActive) {
+    return null;
+  }
 
   // ── Tab-switch guard ────────────────────────────────────────
   useEffect(() => {
