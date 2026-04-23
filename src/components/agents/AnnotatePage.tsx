@@ -43,6 +43,7 @@ export function AnnotatePage({ agentId }: { agentId: string }) {
   const [jumpTo, setJumpTo] = useState("");
 
   const currentCall = calls[currentIndex] ?? null;
+  const isLastCall = calls.length > 0 && currentIndex >= calls.length - 1;
 
   // ── Per-call data via hooks ────────────────────────────────────
   const { state: transcriptState } = useCallTranscript(currentCall?.id ?? null);
@@ -593,11 +594,12 @@ export function AnnotatePage({ agentId }: { agentId: string }) {
             </button>
             <button
               onClick={() => {
-                if (currentIndex < calls.length - 1) setCurrentIndex(currentIndex + 1);
+                if (!isLastCall) setCurrentIndex(currentIndex + 1);
               }}
-              className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors"
+              disabled={isLastCall}
+              className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed"
             >
-              Next Call
+              {isLastCall ? "No more calls" : "Next Call"}
             </button>
           </div>
         </div>
