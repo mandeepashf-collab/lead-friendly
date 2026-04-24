@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import "./globals.css";
 import { WhiteLabelLayout } from "@/components/agency/WhiteLabelLayout";
 import { BrandProvider } from "@/contexts/BrandContext";
+import { ToastProvider } from "@/lib/toast";
 
 export const metadata: Metadata = {
   title: "AI-Powered Sales CRM",
@@ -18,9 +19,11 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className="min-h-screen bg-zinc-950 font-sans text-zinc-100 antialiased">
         <BrandProvider>
-          <WhiteLabelLayout>
-            {children}
-          </WhiteLabelLayout>
+          <ToastProvider>
+            <WhiteLabelLayout>
+              {children}
+            </WhiteLabelLayout>
+          </ToastProvider>
         </BrandProvider>
       </body>
     </html>
