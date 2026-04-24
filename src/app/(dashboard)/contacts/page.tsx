@@ -28,6 +28,7 @@ import { ContactDetail } from "./contact-detail";
 import { ImportDialog } from "./import-dialog";
 import type { Contact } from "@/types/database";
 import { useSoftphone } from "@/components/softphone/SoftphoneContext";
+import { InlineCallTrigger } from "@/components/softphone/InlineCallTrigger";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "All", color: "" },
@@ -271,14 +272,16 @@ export default function ContactsPage() {
                   {/* Actions — does NOT navigate (stopPropagation on the cell) */}
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => openCallModal(contact)}
-                        className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium bg-indigo-600/10 text-indigo-400 hover:bg-indigo-600/20"
-                        title="Call (manual or AI — choose inside)"
-                      >
-                        <PhoneCall className="h-3.5 w-3.5" />
-                        Call
-                      </button>
+                      <InlineCallTrigger contact={contact}>
+                        <button
+                          onClick={() => openCallModal(contact)}
+                          className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium bg-indigo-600/10 text-indigo-400 hover:bg-indigo-600/20"
+                          title="Call (manual or AI — choose inside)"
+                        >
+                          <PhoneCall className="h-3.5 w-3.5" />
+                          Call
+                        </button>
+                      </InlineCallTrigger>
                       <button onClick={goToContact} className="rounded p-1 text-zinc-500 hover:bg-zinc-700 hover:text-white" title="View"><Eye className="h-4 w-4" /></button>
                       <button onClick={() => { setEditContact(contact); setShowAddDialog(true); }} className="rounded p-1 text-zinc-500 hover:bg-zinc-700 hover:text-white" title="Edit"><Edit2 className="h-4 w-4" /></button>
                       <button onClick={() => handleDelete(contact.id)} className="rounded p-1 text-zinc-500 hover:bg-red-500/10 hover:text-red-400" title="Delete"><Trash2 className="h-4 w-4" /></button>

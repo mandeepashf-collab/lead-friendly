@@ -51,7 +51,7 @@ const CALLBACK_ROUTING_TTL_HOURS = 72;
 export async function POST(req: NextRequest) {
   try {
     // ── Parse body ──────────────────────────────────────────
-    let body: { contactId?: string; fromNumber?: string };
+    let body: { contactId?: string; fromNumber?: string; phone?: string };
     try {
       body = await req.json();
     } catch {
@@ -60,6 +60,7 @@ export async function POST(req: NextRequest) {
 
     const contactId = body.contactId?.trim();
     const fromNumber = body.fromNumber?.trim();
+    const clientPhone = typeof body?.phone === "string" ? body.phone.trim() : "";
 
     if (!contactId) {
       return NextResponse.json(
@@ -108,7 +109,7 @@ export async function POST(req: NextRequest) {
     // ── Validate contact belongs to org & has a phone ───────
     const { data: contact, error: contactErr } = await supabaseAdmin
       .from("contacts")
-      .select("id, organization_id, first_name, last_name, phone")
+      .select("id, organization_id, first_name, last_name, phone, cell_phone")
       .eq("id", contactId)
       .single();
 
@@ -121,7 +122,32 @@ export async function POST(req: NextRequest) {
         { status: 403 },
       );
     }
-    if (!contact.phone) {
+
+    // Stage 1.6: accept an optional phone override from the client-side picker.
+    // Must match one of the contact's own numbers (digits-only compare), never
+    // arbitrary. When no phone is supplied, fall back to contact.phone (existing
+    // default behavior, unchanged for single-number contacts and all pre-1.6 clients).
+    const digitsOnly = (s: string | null | undefined) =>
+      (s ?? "").replace(/\D/g, "").replace(/^1/, "");
+
+    let dialTarget: string | null;
+    if (clientPhone) {
+      const clientDigits = digitsOnly(clientPhone);
+      const allowed = [contact.phone, contact.cell_phone]
+        .filter((p): p is string => !!p)
+        .map(digitsOnly);
+      if (!allowed.includes(clientDigits)) {
+        return NextResponse.json(
+          { error: "phone must match contact.phone or contact.cell_phone" },
+          { status: 400 },
+        );
+      }
+      dialTarget = clientPhone;
+    } else {
+      dialTarget = contact.phone;
+    }
+
+    if (!dialTarget) {
       return NextResponse.json(
         { error: "Contact has no phone number on file" },
         { status: 404 },
@@ -180,7 +206,7 @@ export async function POST(req: NextRequest) {
         status: "initiated",
         call_type: "webrtc_outbound_pstn",
         from_number: fromNumber,
-        to_number: contact.phone,
+        to_number: dialTarget,
         started_at: startedAt,
         initiated_by: "softphone",
         call_mode: "human",
@@ -290,7 +316,7 @@ export async function POST(req: NextRequest) {
     try {
       await createSipParticipant({
         trunkId,
-        toNumber: contact.phone,
+        toNumber: dialTarget,
         fromNumber,
         roomName,
         participantIdentity: sipIdentity,

@@ -447,6 +447,10 @@ export function Softphone() {
         body: JSON.stringify({
           contactId: activeContact.id,
           fromNumber: selectedFromNumber,
+          // Stage 1.6: forward the activeContact's phone so the server dials
+          // the picker-chosen number (cell vs primary). Server validates it
+          // matches contact.phone OR contact.cell_phone.
+          phone: activeContact.phone,
         }),
       });
       if (!initRes.ok) {
