@@ -13,6 +13,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useContact, updateContact as updateContactApi, deleteContact } from "@/hooks/use-contacts";
 import { addContactTag, removeContactTag } from "@/hooks/use-contact-tags";
 import { CustomFieldsBlock } from "@/components/contacts/CustomFieldsBlock";
+import { FieldSection } from "@/components/contacts/FieldSection";
 import { InlineCallTrigger } from "@/components/softphone/InlineCallTrigger";
 import { useRecordingUrl } from "@/hooks/use-recording-url";
 import { useCallTranscript } from "@/hooks/useCallTranscript";
@@ -569,72 +570,95 @@ export default function ContactDetailPage() {
 
           {/* Scrollable fields */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            <div>
-              <p className="text-xs font-semibold text-zinc-600 uppercase tracking-wide mb-2">Contact Info</p>
-              <div className="space-y-3">
-                <ContactField label="First Name" value={contact.first_name}
-                  onSave={v => saveField({ first_name: v })} />
-                <ContactField label="Last Name" value={contact.last_name}
-                  onSave={v => saveField({ last_name: v })} />
-                <ContactField label="Email" value={contact.email} type="email"
-                  onSave={v => saveField({ email: v })} />
-                <ContactField label="Phone" value={contact.phone} type="tel"
-                  onSave={v => saveField({ phone: v })} />
-                <ContactField label="Alternate Phone" value={contact.cell_phone}
-                  onSave={v => saveField({ cell_phone: v })} />
-                <ContactField label="Company" value={contact.company_name}
-                  onSave={v => saveField({ company_name: v })} />
-                <ContactField label="Job Title" value={contact.job_title}
-                  onSave={v => saveField({ job_title: v })} />
+            <FieldSection
+              title="Contact Info"
+              fields={[
+                { label: "First Name", value: contact.first_name, editor: (
+                  <ContactField label="First Name" value={contact.first_name}
+                    onSave={v => saveField({ first_name: v })} />
+                )},
+                { label: "Last Name", value: contact.last_name, editor: (
+                  <ContactField label="Last Name" value={contact.last_name}
+                    onSave={v => saveField({ last_name: v })} />
+                )},
+                { label: "Email", value: contact.email, editor: (
+                  <ContactField label="Email" value={contact.email} type="email"
+                    onSave={v => saveField({ email: v })} />
+                )},
+                { label: "Phone", value: contact.phone, editor: (
+                  <ContactField label="Phone" value={contact.phone} type="tel"
+                    onSave={v => saveField({ phone: v })} />
+                )},
+                { label: "Cell Phone", value: contact.cell_phone, editor: (
+                  <ContactField label="Cell Phone" value={contact.cell_phone}
+                    onSave={v => saveField({ cell_phone: v })} />
+                )},
+                { label: "Company", value: contact.company_name, editor: (
+                  <ContactField label="Company" value={contact.company_name}
+                    onSave={v => saveField({ company_name: v })} />
+                )},
+                { label: "Job Title", value: contact.job_title, editor: (
+                  <ContactField label="Job Title" value={contact.job_title}
+                    onSave={v => saveField({ job_title: v })} />
+                )},
+              ]}
+            />
 
-                {/* AI Special Instructions */}
-                <div>
-                  <p className="text-xs text-zinc-600 mb-1 flex items-center gap-1">
-                    <Bot size={10} className="text-indigo-400" />
-                    AI Special Instructions
-                  </p>
-                  <textarea
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-300 focus:border-indigo-500 focus:outline-none resize-none h-20 placeholder:text-zinc-600"
-                    placeholder="Any unique context for the AI when calling this contact... e.g. 'Very price-sensitive. Has 3 kids, mention family protection angle.'"
-                    value={(contact as Record<string,unknown>).ai_special_instructions as string || ""}
-                    onChange={async (e) => {
-                      const val = e.target.value;
-                      await saveField({ ai_special_instructions: val } as Record<string, unknown>);
-                    }}
-                  />
-                </div>
-              </div>
+            {/* AI Special Instructions — always visible, not partitioned */}
+            <div>
+              <p className="text-xs text-zinc-600 mb-1 flex items-center gap-1">
+                <Bot size={10} className="text-indigo-400" />
+                AI Special Instructions
+              </p>
+              <textarea
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-300 focus:border-indigo-500 focus:outline-none resize-none h-20 placeholder:text-zinc-600"
+                placeholder="Any unique context for the AI when calling this contact... e.g. 'Very price-sensitive. Has 3 kids, mention family protection angle.'"
+                value={(contact as Record<string,unknown>).ai_special_instructions as string || ""}
+                onChange={async (e) => {
+                  const val = e.target.value;
+                  await saveField({ ai_special_instructions: val } as Record<string, unknown>);
+                }}
+              />
             </div>
 
-            <div>
-              <p className="text-xs font-semibold text-zinc-600 uppercase tracking-wide mb-2">Details</p>
-              <div className="space-y-3">
-                <div>
-                  <p className="text-xs text-zinc-600 mb-1">Contact Source</p>
-                  <select value={contact.source || ""} onChange={e => saveField({ source: e.target.value })}
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500">
-                    <option value="">Select source</option>
-                    {["Website", "Referral", "Social Media", "Cold Call", "Email Campaign", "Event", "Other"].map(s => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <p className="text-xs text-zinc-600 mb-1">Contact Type</p>
-                  <select value={contact.crm_status || "new_lead"} onChange={e => saveField({ crm_status: e.target.value })}
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500">
-                    {["new_lead", "prospect", "customer", "partner", "vendor"].map(t => (
-                      <option key={t} value={t}>{t.replace("_", " ").replace(/\b\w/g, c => c.toUpperCase())}</option>
-                    ))}
-                  </select>
-                </div>
-                <ContactField label="City" value={contact.city} onSave={v => saveField({ city: v })} />
-                <ContactField label="State" value={contact.state} onSave={v => saveField({ state: v })} />
-              </div>
-            </div>
-
-            {/* Custom Fields (read-only) */}
+            {/* Custom Fields (read-only) — rendered BEFORE Details so imported
+                per-contact data is visible alongside the core identity fields. */}
             <CustomFieldsBlock customFields={contact.custom_fields} />
+
+            <FieldSection
+              title="Details"
+              fields={[
+                { label: "Contact Source", value: contact.source, editor: (
+                  <div>
+                    <p className="text-xs text-zinc-600 mb-1">Contact Source</p>
+                    <select value={contact.source || ""} onChange={e => saveField({ source: e.target.value })}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500">
+                      <option value="">Select source</option>
+                      {["Website", "Referral", "Social Media", "Cold Call", "Email Campaign", "Event", "Other"].map(s => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
+                )},
+                { label: "Contact Type", value: contact.crm_status, editor: (
+                  <div>
+                    <p className="text-xs text-zinc-600 mb-1">Contact Type</p>
+                    <select value={contact.crm_status || "new_lead"} onChange={e => saveField({ crm_status: e.target.value })}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500">
+                      {["new_lead", "prospect", "customer", "partner", "vendor"].map(t => (
+                        <option key={t} value={t}>{t.replace("_", " ").replace(/\b\w/g, c => c.toUpperCase())}</option>
+                      ))}
+                    </select>
+                  </div>
+                )},
+                { label: "City", value: contact.city, editor: (
+                  <ContactField label="City" value={contact.city} onSave={v => saveField({ city: v })} />
+                )},
+                { label: "State", value: contact.state, editor: (
+                  <ContactField label="State" value={contact.state} onSave={v => saveField({ state: v })} />
+                )},
+              ]}
+            />
 
             {/* Tags */}
             <div>
