@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useContacts, deleteContact } from "@/hooks/use-contacts";
+import { createClient } from "@/lib/supabase/client";
 import { ContactDialog } from "./contact-dialog";
 import { ContactDetail } from "./contact-detail";
 import { ImportDialog } from "./import-dialog";
@@ -109,6 +110,39 @@ export default function ContactsPage() {
     setSelectedIds(next);
   };
 
+  // ── Bulk delete (Stage 1.6.1) ────────────────────────────────────
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    setDeleting(true);
+    try {
+      const ids = Array.from(selectedIds);
+      const supabase = createClient();
+      const { data, error } = await supabase.rpc("bulk_delete_contacts", {
+        p_contact_ids: ids,
+      });
+      if (error) {
+        console.error("[bulk_delete] RPC error:", error);
+        setCallToast({ msg: `Delete failed: ${error.message}`, ok: false });
+        setTimeout(() => setCallToast(null), 4000);
+        return;
+      }
+      const deletedCount = (data as { deleted_count: number }[] | null)?.[0]?.deleted_count ?? 0;
+      setSelectedIds(new Set());
+      setConfirmDeleteOpen(false);
+      await refetch();
+      setCallToast({
+        msg: `Deleted ${deletedCount} contact${deletedCount === 1 ? "" : "s"}`,
+        ok: true,
+      });
+      setTimeout(() => setCallToast(null), 3000);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const formatName = (c: Contact) => {
     const parts = [c.first_name, c.last_name].filter(Boolean);
     return parts.length > 0 ? parts.join(" ") : "Unnamed Contact";
@@ -176,7 +210,7 @@ export default function ContactsPage() {
           <span className="text-sm text-indigo-400">{selectedIds.size} selected</span>
           <button className="text-xs text-zinc-400 hover:text-white">Change Status</button>
           <button className="text-xs text-zinc-400 hover:text-white">Add Tag</button>
-          <button className="text-xs text-red-400 hover:text-red-300">Delete</button>
+          <button onClick={() => setConfirmDeleteOpen(true)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
           <button onClick={() => setSelectedIds(new Set())} className="ml-auto text-xs text-zinc-500 hover:text-zinc-300">Clear</button>
         </div>
       )}
@@ -312,6 +346,57 @@ export default function ContactsPage() {
       {showAddDialog && <ContactDialog contact={editContact} onClose={() => { setShowAddDialog(false); setEditContact(null); }} onSaved={() => { setShowAddDialog(false); setEditContact(null); refetch(); }} />}
       {showDetail && selectedContact && <ContactDetail contact={selectedContact} onClose={() => { setShowDetail(false); setSelectedContact(null); }} onEdit={() => { setShowDetail(false); setEditContact(selectedContact); setShowAddDialog(true); }} onDeleted={() => { setShowDetail(false); setSelectedContact(null); refetch(); }} />}
       {showImport && <ImportDialog onClose={() => setShowImport(false)} onImported={() => { setShowImport(false); refetch(); }} />}
+
+      {/* Bulk delete confirmation (Stage 1.6.1) */}
+      {confirmDeleteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+             onClick={() => !deleting && setConfirmDeleteOpen(false)}>
+          <div className="w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-900 shadow-2xl p-6"
+               onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-white mb-2">
+              Delete {selectedIds.size} contact{selectedIds.size === 1 ? "" : "s"}?
+            </h3>
+            <p className="text-sm text-zinc-400 mb-4">
+              This will permanently delete the selected contacts and their associated
+              tags, calls, and activity. This cannot be undone.
+            </p>
+            <ul className="text-sm text-zinc-300 mb-4 max-h-32 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2">
+              {contacts
+                .filter((c) => selectedIds.has(c.id))
+                .slice(0, 20)
+                .map((c) => (
+                  <li key={c.id}>
+                    {formatName(c)}
+                    {c.email ? ` · ${c.email}` : ""}
+                  </li>
+                ))}
+              {selectedIds.size > 20 && (
+                <li className="italic text-zinc-500">
+                  ...and {selectedIds.size - 20} more
+                </li>
+              )}
+            </ul>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteOpen(false)}
+                disabled={deleting}
+                className="h-9 rounded-lg border border-zinc-700 px-4 text-sm text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkDelete}
+                disabled={deleting}
+                className="h-9 rounded-lg bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
