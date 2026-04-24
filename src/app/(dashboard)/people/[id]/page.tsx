@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useContact, updateContact as updateContactApi, deleteContact } from "@/hooks/use-contacts";
 import { addContactTag, removeContactTag } from "@/hooks/use-contact-tags";
+import { CustomFieldsBlock } from "@/components/contacts/CustomFieldsBlock";
+import { InlineCallTrigger } from "@/components/softphone/InlineCallTrigger";
 import { useRecordingUrl } from "@/hooks/use-recording-url";
 import { useCallTranscript } from "@/hooks/useCallTranscript";
 import { useSoftphone } from "@/components/softphone/SoftphoneContext";
@@ -517,21 +519,23 @@ export default function ContactDetailPage() {
 
             {/* Quick actions — above status so dropdown never overlaps them */}
             <div className="flex gap-2 mb-3">
-              <button
-                onClick={() => {
-                  if (!contact.phone) return;
-                  openSoftphone({
-                    id: contact.id,
-                    firstName: contact.first_name ?? null,
-                    lastName: contact.last_name ?? null,
-                    phone: contact.phone,
-                    company: contact.company_name ?? null,
-                  });
-                }}
-                disabled={!contact.phone || isInCall}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg transition-colors">
-                <Phone size={12} /> Call
-              </button>
+              <InlineCallTrigger contact={contact} className="flex-1">
+                <button
+                  onClick={() => {
+                    if (!contact.phone) return;
+                    openSoftphone({
+                      id: contact.id,
+                      firstName: contact.first_name ?? null,
+                      lastName: contact.last_name ?? null,
+                      phone: contact.phone,
+                      company: contact.company_name ?? null,
+                    });
+                  }}
+                  disabled={!contact.phone || isInCall}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg transition-colors">
+                  <Phone size={12} /> Call
+                </button>
+              </InlineCallTrigger>
               <button className="flex-1 flex items-center justify-center gap-1.5 py-2 border border-zinc-700 hover:border-zinc-500 text-zinc-400 text-xs rounded-lg transition-colors">
                 <MessageSquare size={12} /> SMS
               </button>
@@ -628,6 +632,9 @@ export default function ContactDetailPage() {
                 <ContactField label="State" value={contact.state} onSave={v => saveField({ state: v })} />
               </div>
             </div>
+
+            {/* Custom Fields (read-only) */}
+            <CustomFieldsBlock customFields={contact.custom_fields} />
 
             {/* Tags */}
             <div>

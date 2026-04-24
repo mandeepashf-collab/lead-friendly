@@ -34,6 +34,7 @@ export interface Contact {
   last_name: string | null;
   email: string | null;
   phone: string | null;
+  cell_phone?: string | null;
   company_name: string | null;
   lender_name: string | null;
   job_title: string | null;
