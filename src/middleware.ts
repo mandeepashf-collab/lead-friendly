@@ -188,29 +188,59 @@ export async function middleware(request: NextRequest) {
                        hostname.includes('localhost')
 
   if (!isMainDomain) {
-    // This is a white-label custom domain — look up sub-account
-    const { data: subAccount } = await supabase
-      .from('sub_accounts')
-      .select('id, agency_id, company_name, logo_url, primary_color, accent_color, status')
-      .eq('custom_domain', hostname)
-      .single()
+    // White-label custom domain lookup.
+    //
+    // Stage 3.2: primary path is `organizations.custom_domain` — the
+    // canonical branding source for per-org white-label. Falls back to
+    // the legacy `sub_accounts.custom_domain` path so existing agency
+    // sub-account domains keep working until Stage 3.1/3.3 migrates them.
 
-    if (subAccount) {
-      if (subAccount.status === 'paused' || subAccount.status === 'suspended') {
+    // Primary: organizations
+    const { data: org } = await supabase
+      .from('organizations')
+      .select('id, primary_logo_url, primary_color, portal_name, domain_status, is_active')
+      .eq('custom_domain', hostname)
+      .maybeSingle()
+
+    if (org) {
+      if (!org.is_active) {
         return NextResponse.redirect(new URL('/suspended', request.url))
       }
+      if (org.domain_status === 'dns_pending') {
+        return NextResponse.redirect(new URL('/domain-pending', request.url))
+      }
+      if (org.domain_status !== 'verified') {
+        return NextResponse.redirect(new URL('/unknown-domain', request.url))
+      }
 
-      // Inject sub-account branding into headers
-      // Layout reads these to apply client's brand
-      res.headers.set('x-sub-account-id', subAccount.id)
-      res.headers.set('x-agency-id', subAccount.agency_id)
-      res.headers.set('x-brand-name', subAccount.company_name || 'CRM')
-      res.headers.set('x-brand-color', subAccount.primary_color || '#6366f1')
-      res.headers.set('x-brand-logo', subAccount.logo_url || '')
+      res.headers.set('x-lf-org-id', org.id)
+      res.headers.set('x-brand-name', org.portal_name || 'CRM')
+      res.headers.set('x-brand-color', org.primary_color || '#6366f1')
+      res.headers.set('x-brand-logo', org.primary_logo_url || '')
       res.headers.set('x-is-white-label', 'true')
     } else {
-      // Unknown domain
-      return NextResponse.redirect(new URL('https://leadfriendly.com', request.url))
+      // Legacy fallback: sub_accounts
+      const { data: subAccount } = await supabase
+        .from('sub_accounts')
+        .select('id, agency_id, company_name, logo_url, primary_color, accent_color, status')
+        .eq('custom_domain', hostname)
+        .maybeSingle()
+
+      if (subAccount) {
+        if (subAccount.status === 'paused' || subAccount.status === 'suspended') {
+          return NextResponse.redirect(new URL('/suspended', request.url))
+        }
+
+        res.headers.set('x-sub-account-id', subAccount.id)
+        res.headers.set('x-agency-id', subAccount.agency_id)
+        res.headers.set('x-brand-name', subAccount.company_name || 'CRM')
+        res.headers.set('x-brand-color', subAccount.primary_color || '#6366f1')
+        res.headers.set('x-brand-logo', subAccount.logo_url || '')
+        res.headers.set('x-is-white-label', 'true')
+      } else {
+        // Unknown custom domain — land on a friendly page, not the marketing site.
+        return NextResponse.redirect(new URL('/unknown-domain', request.url))
+      }
     }
   }
 
