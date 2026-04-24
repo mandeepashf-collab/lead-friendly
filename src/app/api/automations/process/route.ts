@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { enforceTcpa, nextValidTcpaWindow } from "@/lib/tcpa/enforce";
 
 /**
  * POST /api/automations/process
@@ -112,8 +113,48 @@ export async function POST(req: NextRequest) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
     let triggered = 0;
     let failed = 0;
+    let skippedForCompliance = 0;
     for (const contact of toCall) {
       if (!contact.phone) continue;
+
+      // TCPA compliance gate — runs per-contact BEFORE dispatching to
+      // /api/calls/trigger. Hard blocks and soft blocks both terminate for
+      // automated mode; the contact gets a scheduled_actions retry row for
+      // the next valid window so the ops team can see why it was held back.
+      const verdict = await enforceTcpa({
+        orgId: campaign.organization_id,
+        userId: (campaign.created_by as string | null) ?? '',
+        userRole: 'admin', // campaign processor acts with system privileges
+        contactId: contact.id,
+        mode: 'automated',
+        supabase,
+      });
+
+      if (verdict.status === 'hard_blocked') {
+        const nextWindow = await nextValidTcpaWindow({
+          orgId: campaign.organization_id,
+          contactId: contact.id,
+          supabase,
+        });
+        await supabase.from('scheduled_actions').insert({
+          organization_id: campaign.organization_id,
+          contact_id: contact.id,
+          action_type: 'retry_call',
+          action_payload: {
+            source: 'campaign',
+            campaign_id: campaign_id,
+            ai_agent_id: campaign.ai_agent_id,
+            blocks: verdict.blocks,
+            original_attempt_at: new Date().toISOString(),
+          },
+          scheduled_for: nextWindow?.toISOString() ?? null,
+          status: 'skipped_compliance',
+          last_error: `TCPA: ${verdict.blocks.map((b) => b.code).join(',')}`,
+        });
+        skippedForCompliance++;
+        continue;
+      }
+
       try {
         const res = await fetch(`${appUrl}/api/calls/trigger`, {
           method: 'POST',
@@ -147,7 +188,13 @@ export async function POST(req: NextRequest) {
       .update({ total_contacted: (campaign.total_contacted || 0) + triggered })
       .eq('id', campaign_id);
 
-    return NextResponse.json({ ok: true, triggered, failed, remaining: toCall.length });
+    return NextResponse.json({
+      ok: true,
+      triggered,
+      failed,
+      skippedForCompliance,
+      remaining: toCall.length,
+    });
   }
 
   // ── cron path: original automation processing ─────────────────────────
