@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Contact } from "@/types/database";
+import { sanitizeStatus } from "@/lib/import/statusAliases";
+import { coerceCellValue } from "@/lib/import/coerceValue";
 
 interface UseContactsOptions {
   status?: string;
@@ -137,60 +139,6 @@ export async function deleteContact(
   return { error: error?.message || null };
 }
 
-// ─── Status sanitization ────────────────────────────────────────────────
-// The contacts_status_check constraint permits only a fixed enum. Real CSVs
-// routinely use aliases like "New Lead" or industry codes like "CI-A". We map
-// known aliases to valid enum values; unknown values default to "new" and
-// surface as a fallback tag (status-<slug>) so the value isn't lost.
-const VALID_STATUS = new Set([
-  "new", "contacted", "qualified", "proposal",
-  "negotiation", "won", "lost", "do_not_contact",
-]);
-
-const STATUS_ALIASES: Record<string, string> = {
-  // new
-  "new lead": "new", "fresh": "new", "lead": "new", "unworked": "new",
-  // contacted
-  "touched": "contacted", "reached": "contacted", "attempted": "contacted",
-  // qualified
-  "interested": "qualified", "warm": "qualified", "hot": "qualified",
-  // proposal / negotiation
-  "quoted": "proposal", "quote sent": "proposal",
-  "negotiating": "negotiation", "in negotiation": "negotiation",
-  // won
-  "closed": "won", "converted": "won", "customer": "won", "client": "won",
-  // lost
-  "dead": "lost", "cold": "lost", "not interested": "lost", "disqualified": "lost",
-  // DNC variants
-  "dnc": "do_not_contact",
-  "do not call": "do_not_contact",
-  "do not contact": "do_not_contact",
-};
-
-function slug(raw: string): string {
-  return raw.trim().toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-/**
- * Given a CSV-provided status value, return { status, fallbackTag }.
- * - If the value matches the enum directly, use it.
- * - If it matches a known alias, use the mapped enum value.
- * - Otherwise, default to "new" and emit a fallbackTag "status-<slug>"
- *   so the original value is preserved as a tag on the contact.
- */
-function sanitizeStatus(raw: string | undefined | null):
-  { status: string; fallbackTag: string | null } {
-  if (!raw) return { status: "new", fallbackTag: null };
-  const normalized = raw.trim().toLowerCase();
-  if (!normalized) return { status: "new", fallbackTag: null };
-  if (VALID_STATUS.has(normalized)) return { status: normalized, fallbackTag: null };
-  if (STATUS_ALIASES[normalized]) return { status: STATUS_ALIASES[normalized], fallbackTag: null };
-  // Unknown — preserve as tag
-  return { status: "new", fallbackTag: `status-${slug(raw)}` };
-}
-
 /**
  * Bulk-import contacts from a CSV upload.
  *
@@ -283,11 +231,19 @@ export async function bulkImportContacts(
       statusFallbackPairs.push({ rowIndex: i, tag: fallbackTag });
     }
 
-    // Merge custom fields for this row into a JSONB blob
+    // Merge custom fields for this row into a JSONB blob. Coerce numeric-
+    // looking strings to JSON numbers (Stage 1.6 decision #8), booleans to
+    // booleans, and drop empty strings entirely so the JSONB blob stays tight.
     const customFields = customFieldsByIndex?.[i];
-    const customJson = customFields && Object.keys(customFields).length
-      ? customFields
-      : undefined;
+    let customJson: Record<string, string | number | boolean> | undefined;
+    if (customFields) {
+      const coerced: Record<string, string | number | boolean> = {};
+      for (const [k, v] of Object.entries(customFields)) {
+        const c = coerceCellValue(v);
+        if (c !== null) coerced[k] = c;
+      }
+      if (Object.keys(coerced).length > 0) customJson = coerced;
+    }
 
     rows.push({
       ...c,
