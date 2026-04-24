@@ -1,0 +1,2577 @@
+{
+  "201": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NJ",
+    "tz": "America/New_York"
+  },
+  "202": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "DC",
+    "tz": "America/New_York"
+  },
+  "203": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "CT",
+    "tz": "America/New_York"
+  },
+  "204": {
+    "country": "CA",
+    "label": "Central",
+    "state": "MB",
+    "tz": "America/Winnipeg"
+  },
+  "205": {
+    "country": "US",
+    "label": "Central",
+    "state": "AL",
+    "tz": "America/Chicago"
+  },
+  "206": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "WA",
+    "tz": "America/Los_Angeles"
+  },
+  "207": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "ME",
+    "tz": "America/New_York"
+  },
+  "208": {
+    "country": "US",
+    "label": "Mountain",
+    "state": "ID",
+    "tz": "America/Boise"
+  },
+  "209": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "210": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "212": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "213": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "214": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "215": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "PA",
+    "tz": "America/New_York"
+  },
+  "216": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "OH",
+    "tz": "America/New_York"
+  },
+  "217": {
+    "country": "US",
+    "label": "Central",
+    "state": "IL",
+    "tz": "America/Chicago"
+  },
+  "218": {
+    "country": "US",
+    "label": "Central",
+    "state": "MN",
+    "tz": "America/Chicago"
+  },
+  "219": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "IN",
+    "tz": "America/Indiana/Indianapolis"
+  },
+  "220": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "OH",
+    "tz": "America/New_York"
+  },
+  "223": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "PA",
+    "tz": "America/New_York"
+  },
+  "224": {
+    "country": "US",
+    "label": "Central",
+    "state": "IL",
+    "tz": "America/Chicago"
+  },
+  "225": {
+    "country": "US",
+    "label": "Central",
+    "state": "LA",
+    "tz": "America/Chicago"
+  },
+  "226": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "ON",
+    "tz": "America/Toronto"
+  },
+  "227": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MD",
+    "tz": "America/New_York"
+  },
+  "228": {
+    "country": "US",
+    "label": "Central",
+    "state": "MS",
+    "tz": "America/Chicago"
+  },
+  "229": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "GA",
+    "tz": "America/New_York"
+  },
+  "231": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MI",
+    "tz": "America/Detroit"
+  },
+  "234": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "OH",
+    "tz": "America/New_York"
+  },
+  "235": {
+    "country": "US",
+    "label": "Central",
+    "state": "MO",
+    "tz": "America/Chicago"
+  },
+  "236": {
+    "country": "CA",
+    "label": "Pacific",
+    "state": "BC",
+    "tz": "America/Vancouver"
+  },
+  "239": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "FL",
+    "tz": "America/New_York"
+  },
+  "240": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MD",
+    "tz": "America/New_York"
+  },
+  "248": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MI",
+    "tz": "America/Detroit"
+  },
+  "249": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "ON",
+    "tz": "America/Toronto"
+  },
+  "250": {
+    "country": "CA",
+    "label": "Pacific",
+    "state": "BC",
+    "tz": "America/Vancouver"
+  },
+  "251": {
+    "country": "US",
+    "label": "Central",
+    "state": "AL",
+    "tz": "America/Chicago"
+  },
+  "252": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NC",
+    "tz": "America/New_York"
+  },
+  "253": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "WA",
+    "tz": "America/Los_Angeles"
+  },
+  "254": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "256": {
+    "country": "US",
+    "label": "Central",
+    "state": "AL",
+    "tz": "America/Chicago"
+  },
+  "257": {
+    "country": "CA",
+    "label": "Pacific",
+    "state": "BC",
+    "tz": "America/Vancouver"
+  },
+  "260": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "IN",
+    "tz": "America/Indiana/Indianapolis"
+  },
+  "262": {
+    "country": "US",
+    "label": "Central",
+    "state": "WI",
+    "tz": "America/Chicago"
+  },
+  "263": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "QC",
+    "tz": "America/Montreal"
+  },
+  "267": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "PA",
+    "tz": "America/New_York"
+  },
+  "269": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MI",
+    "tz": "America/Detroit"
+  },
+  "270": {
+    "country": "US",
+    "label": "Central",
+    "state": "KY",
+    "tz": "America/Chicago"
+  },
+  "272": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "PA",
+    "tz": "America/New_York"
+  },
+  "274": {
+    "country": "US",
+    "label": "Central",
+    "state": "WI",
+    "tz": "America/Chicago"
+  },
+  "276": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "VA",
+    "tz": "America/New_York"
+  },
+  "279": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "281": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "283": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "OH",
+    "tz": "America/New_York"
+  },
+  "289": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "ON",
+    "tz": "America/Toronto"
+  },
+  "301": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MD",
+    "tz": "America/New_York"
+  },
+  "302": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "DE",
+    "tz": "America/New_York"
+  },
+  "303": {
+    "country": "US",
+    "label": "Mountain",
+    "state": "CO",
+    "tz": "America/Denver"
+  },
+  "304": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "WV",
+    "tz": "America/New_York"
+  },
+  "305": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "FL",
+    "tz": "America/New_York"
+  },
+  "306": {
+    "country": "CA",
+    "label": "Central (no DST)",
+    "state": "SK",
+    "tz": "America/Regina"
+  },
+  "307": {
+    "country": "US",
+    "label": "Mountain",
+    "state": "WY",
+    "tz": "America/Denver"
+  },
+  "308": {
+    "country": "US",
+    "label": "Mountain",
+    "state": "NE",
+    "tz": "America/Denver"
+  },
+  "309": {
+    "country": "US",
+    "label": "Central",
+    "state": "IL",
+    "tz": "America/Chicago"
+  },
+  "310": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "312": {
+    "country": "US",
+    "label": "Central",
+    "state": "IL",
+    "tz": "America/Chicago"
+  },
+  "313": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MI",
+    "tz": "America/Detroit"
+  },
+  "314": {
+    "country": "US",
+    "label": "Central",
+    "state": "MO",
+    "tz": "America/Chicago"
+  },
+  "315": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "316": {
+    "country": "US",
+    "label": "Central",
+    "state": "KS",
+    "tz": "America/Chicago"
+  },
+  "317": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "IN",
+    "tz": "America/Indiana/Indianapolis"
+  },
+  "318": {
+    "country": "US",
+    "label": "Central",
+    "state": "LA",
+    "tz": "America/Chicago"
+  },
+  "319": {
+    "country": "US",
+    "label": "Central",
+    "state": "IA",
+    "tz": "America/Chicago"
+  },
+  "320": {
+    "country": "US",
+    "label": "Central",
+    "state": "MN",
+    "tz": "America/Chicago"
+  },
+  "321": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "FL",
+    "tz": "America/New_York"
+  },
+  "323": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "324": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "FL",
+    "tz": "America/New_York"
+  },
+  "325": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "326": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "OH",
+    "tz": "America/New_York"
+  },
+  "327": {
+    "country": "US",
+    "label": "Central",
+    "state": "AR",
+    "tz": "America/Chicago"
+  },
+  "329": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "330": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "OH",
+    "tz": "America/New_York"
+  },
+  "331": {
+    "country": "US",
+    "label": "Central",
+    "state": "IL",
+    "tz": "America/Chicago"
+  },
+  "332": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "334": {
+    "country": "US",
+    "label": "Central",
+    "state": "AL",
+    "tz": "America/Chicago"
+  },
+  "336": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NC",
+    "tz": "America/New_York"
+  },
+  "337": {
+    "country": "US",
+    "label": "Central",
+    "state": "LA",
+    "tz": "America/Chicago"
+  },
+  "339": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MA",
+    "tz": "America/New_York"
+  },
+  "341": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "343": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "ON",
+    "tz": "America/Toronto"
+  },
+  "346": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "347": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "350": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "351": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MA",
+    "tz": "America/New_York"
+  },
+  "352": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "FL",
+    "tz": "America/New_York"
+  },
+  "353": {
+    "country": "US",
+    "label": "Central",
+    "state": "WI",
+    "tz": "America/Chicago"
+  },
+  "354": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "QC",
+    "tz": "America/Montreal"
+  },
+  "357": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "360": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "WA",
+    "tz": "America/Los_Angeles"
+  },
+  "361": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "363": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "364": {
+    "country": "US",
+    "label": "Central",
+    "state": "KY",
+    "tz": "America/Chicago"
+  },
+  "365": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "ON",
+    "tz": "America/Toronto"
+  },
+  "367": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "QC",
+    "tz": "America/Montreal"
+  },
+  "368": {
+    "country": "CA",
+    "label": "Mountain",
+    "state": "AB",
+    "tz": "America/Edmonton"
+  },
+  "369": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "380": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "OH",
+    "tz": "America/New_York"
+  },
+  "382": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "ON",
+    "tz": "America/Toronto"
+  },
+  "385": {
+    "country": "US",
+    "label": "Mountain",
+    "state": "UT",
+    "tz": "America/Denver"
+  },
+  "386": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "FL",
+    "tz": "America/New_York"
+  },
+  "401": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "RI",
+    "tz": "America/New_York"
+  },
+  "402": {
+    "country": "US",
+    "label": "Central",
+    "state": "NE",
+    "tz": "America/Chicago"
+  },
+  "403": {
+    "country": "CA",
+    "label": "Mountain",
+    "state": "AB",
+    "tz": "America/Edmonton"
+  },
+  "404": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "GA",
+    "tz": "America/New_York"
+  },
+  "405": {
+    "country": "US",
+    "label": "Central",
+    "state": "OK",
+    "tz": "America/Chicago"
+  },
+  "406": {
+    "country": "US",
+    "label": "Mountain",
+    "state": "MT",
+    "tz": "America/Denver"
+  },
+  "407": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "FL",
+    "tz": "America/New_York"
+  },
+  "408": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "409": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "410": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MD",
+    "tz": "America/New_York"
+  },
+  "412": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "PA",
+    "tz": "America/New_York"
+  },
+  "413": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MA",
+    "tz": "America/New_York"
+  },
+  "414": {
+    "country": "US",
+    "label": "Central",
+    "state": "WI",
+    "tz": "America/Chicago"
+  },
+  "415": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "416": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "ON",
+    "tz": "America/Toronto"
+  },
+  "417": {
+    "country": "US",
+    "label": "Central",
+    "state": "MO",
+    "tz": "America/Chicago"
+  },
+  "418": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "QC",
+    "tz": "America/Montreal"
+  },
+  "419": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "OH",
+    "tz": "America/New_York"
+  },
+  "423": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "TN",
+    "tz": "America/New_York"
+  },
+  "424": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "425": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "WA",
+    "tz": "America/Los_Angeles"
+  },
+  "428": {
+    "country": "CA",
+    "label": "Atlantic",
+    "state": "NB",
+    "tz": "America/Moncton"
+  },
+  "430": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "431": {
+    "country": "CA",
+    "label": "Central",
+    "state": "MB",
+    "tz": "America/Winnipeg"
+  },
+  "432": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "434": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "VA",
+    "tz": "America/New_York"
+  },
+  "435": {
+    "country": "US",
+    "label": "Mountain",
+    "state": "UT",
+    "tz": "America/Denver"
+  },
+  "436": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "OH",
+    "tz": "America/New_York"
+  },
+  "437": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "ON",
+    "tz": "America/Toronto"
+  },
+  "438": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "QC",
+    "tz": "America/Montreal"
+  },
+  "440": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "OH",
+    "tz": "America/New_York"
+  },
+  "442": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "443": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MD",
+    "tz": "America/New_York"
+  },
+  "445": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "PA",
+    "tz": "America/New_York"
+  },
+  "447": {
+    "country": "US",
+    "label": "Central",
+    "state": "IL",
+    "tz": "America/Chicago"
+  },
+  "448": {
+    "country": "US",
+    "label": "Central",
+    "state": "FL",
+    "tz": "America/Chicago"
+  },
+  "450": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "QC",
+    "tz": "America/Montreal"
+  },
+  "457": {
+    "country": "US",
+    "label": "Central",
+    "state": "LA",
+    "tz": "America/Chicago"
+  },
+  "458": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "OR",
+    "tz": "America/Los_Angeles"
+  },
+  "463": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "IN",
+    "tz": "America/Indiana/Indianapolis"
+  },
+  "464": {
+    "country": "US",
+    "label": "Central",
+    "state": "IL",
+    "tz": "America/Chicago"
+  },
+  "468": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "QC",
+    "tz": "America/Montreal"
+  },
+  "469": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "470": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "GA",
+    "tz": "America/New_York"
+  },
+  "471": {
+    "country": "US",
+    "label": "Central",
+    "state": "MS",
+    "tz": "America/Chicago"
+  },
+  "472": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NC",
+    "tz": "America/New_York"
+  },
+  "474": {
+    "country": "CA",
+    "label": "Central (no DST)",
+    "state": "SK",
+    "tz": "America/Regina"
+  },
+  "475": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "CT",
+    "tz": "America/New_York"
+  },
+  "478": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "GA",
+    "tz": "America/New_York"
+  },
+  "479": {
+    "country": "US",
+    "label": "Central",
+    "state": "AR",
+    "tz": "America/Chicago"
+  },
+  "480": {
+    "country": "US",
+    "label": "Mountain (no DST)",
+    "state": "AZ",
+    "tz": "America/Phoenix"
+  },
+  "483": {
+    "country": "US",
+    "label": "Central",
+    "state": "AL",
+    "tz": "America/Chicago"
+  },
+  "484": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "PA",
+    "tz": "America/New_York"
+  },
+  "501": {
+    "country": "US",
+    "label": "Central",
+    "state": "AR",
+    "tz": "America/Chicago"
+  },
+  "502": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "KY",
+    "tz": "America/New_York"
+  },
+  "503": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "OR",
+    "tz": "America/Los_Angeles"
+  },
+  "504": {
+    "country": "US",
+    "label": "Central",
+    "state": "LA",
+    "tz": "America/Chicago"
+  },
+  "505": {
+    "country": "US",
+    "label": "Mountain",
+    "state": "NM",
+    "tz": "America/Denver"
+  },
+  "506": {
+    "country": "CA",
+    "label": "Atlantic",
+    "state": "NB",
+    "tz": "America/Moncton"
+  },
+  "507": {
+    "country": "US",
+    "label": "Central",
+    "state": "MN",
+    "tz": "America/Chicago"
+  },
+  "508": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MA",
+    "tz": "America/New_York"
+  },
+  "509": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "WA",
+    "tz": "America/Los_Angeles"
+  },
+  "510": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "512": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "513": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "OH",
+    "tz": "America/New_York"
+  },
+  "514": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "QC",
+    "tz": "America/Montreal"
+  },
+  "515": {
+    "country": "US",
+    "label": "Central",
+    "state": "IA",
+    "tz": "America/Chicago"
+  },
+  "516": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "517": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MI",
+    "tz": "America/Detroit"
+  },
+  "518": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "519": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "ON",
+    "tz": "America/Toronto"
+  },
+  "520": {
+    "country": "US",
+    "label": "Mountain (no DST)",
+    "state": "AZ",
+    "tz": "America/Phoenix"
+  },
+  "530": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "531": {
+    "country": "US",
+    "label": "Central",
+    "state": "NE",
+    "tz": "America/Chicago"
+  },
+  "534": {
+    "country": "US",
+    "label": "Central",
+    "state": "WI",
+    "tz": "America/Chicago"
+  },
+  "539": {
+    "country": "US",
+    "label": "Central",
+    "state": "OK",
+    "tz": "America/Chicago"
+  },
+  "540": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "VA",
+    "tz": "America/New_York"
+  },
+  "541": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "OR",
+    "tz": "America/Los_Angeles"
+  },
+  "548": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "ON",
+    "tz": "America/Toronto"
+  },
+  "551": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NJ",
+    "tz": "America/New_York"
+  },
+  "557": {
+    "country": "US",
+    "label": "Central",
+    "state": "MO",
+    "tz": "America/Chicago"
+  },
+  "559": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "561": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "FL",
+    "tz": "America/New_York"
+  },
+  "562": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "563": {
+    "country": "US",
+    "label": "Central",
+    "state": "IA",
+    "tz": "America/Chicago"
+  },
+  "564": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "WA",
+    "tz": "America/Los_Angeles"
+  },
+  "567": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "OH",
+    "tz": "America/New_York"
+  },
+  "568": {
+    "country": "CA",
+    "label": "Mountain",
+    "state": "AB",
+    "tz": "America/Edmonton"
+  },
+  "570": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "PA",
+    "tz": "America/New_York"
+  },
+  "571": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "VA",
+    "tz": "America/New_York"
+  },
+  "572": {
+    "country": "US",
+    "label": "Central",
+    "state": "OK",
+    "tz": "America/Chicago"
+  },
+  "573": {
+    "country": "US",
+    "label": "Central",
+    "state": "MO",
+    "tz": "America/Chicago"
+  },
+  "574": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "IN",
+    "tz": "America/Indiana/Indianapolis"
+  },
+  "575": {
+    "country": "US",
+    "label": "Mountain",
+    "state": "NM",
+    "tz": "America/Denver"
+  },
+  "579": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "QC",
+    "tz": "America/Montreal"
+  },
+  "580": {
+    "country": "US",
+    "label": "Central",
+    "state": "OK",
+    "tz": "America/Chicago"
+  },
+  "581": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "QC",
+    "tz": "America/Montreal"
+  },
+  "582": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "PA",
+    "tz": "America/New_York"
+  },
+  "584": {
+    "country": "CA",
+    "label": "Central",
+    "state": "MB",
+    "tz": "America/Winnipeg"
+  },
+  "585": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "586": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MI",
+    "tz": "America/Detroit"
+  },
+  "587": {
+    "country": "CA",
+    "label": "Mountain",
+    "state": "AB",
+    "tz": "America/Edmonton"
+  },
+  "601": {
+    "country": "US",
+    "label": "Central",
+    "state": "MS",
+    "tz": "America/Chicago"
+  },
+  "602": {
+    "country": "US",
+    "label": "Mountain (no DST)",
+    "state": "AZ",
+    "tz": "America/Phoenix"
+  },
+  "603": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NH",
+    "tz": "America/New_York"
+  },
+  "604": {
+    "country": "CA",
+    "label": "Pacific",
+    "state": "BC",
+    "tz": "America/Vancouver"
+  },
+  "605": {
+    "country": "US",
+    "label": "Central",
+    "state": "SD",
+    "tz": "America/Chicago"
+  },
+  "606": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "KY",
+    "tz": "America/New_York"
+  },
+  "607": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "608": {
+    "country": "US",
+    "label": "Central",
+    "state": "WI",
+    "tz": "America/Chicago"
+  },
+  "609": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NJ",
+    "tz": "America/New_York"
+  },
+  "610": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "PA",
+    "tz": "America/New_York"
+  },
+  "612": {
+    "country": "US",
+    "label": "Central",
+    "state": "MN",
+    "tz": "America/Chicago"
+  },
+  "613": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "ON",
+    "tz": "America/Toronto"
+  },
+  "614": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "OH",
+    "tz": "America/New_York"
+  },
+  "615": {
+    "country": "US",
+    "label": "Central",
+    "state": "TN",
+    "tz": "America/Chicago"
+  },
+  "616": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MI",
+    "tz": "America/Detroit"
+  },
+  "617": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MA",
+    "tz": "America/New_York"
+  },
+  "618": {
+    "country": "US",
+    "label": "Central",
+    "state": "IL",
+    "tz": "America/Chicago"
+  },
+  "619": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "620": {
+    "country": "US",
+    "label": "Central",
+    "state": "KS",
+    "tz": "America/Chicago"
+  },
+  "621": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "623": {
+    "country": "US",
+    "label": "Mountain (no DST)",
+    "state": "AZ",
+    "tz": "America/Phoenix"
+  },
+  "624": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "626": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "628": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "629": {
+    "country": "US",
+    "label": "Central",
+    "state": "TN",
+    "tz": "America/Chicago"
+  },
+  "630": {
+    "country": "US",
+    "label": "Central",
+    "state": "IL",
+    "tz": "America/Chicago"
+  },
+  "631": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "636": {
+    "country": "US",
+    "label": "Central",
+    "state": "MO",
+    "tz": "America/Chicago"
+  },
+  "639": {
+    "country": "CA",
+    "label": "Central (no DST)",
+    "state": "SK",
+    "tz": "America/Regina"
+  },
+  "640": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NJ",
+    "tz": "America/New_York"
+  },
+  "641": {
+    "country": "US",
+    "label": "Central",
+    "state": "IA",
+    "tz": "America/Chicago"
+  },
+  "645": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "FL",
+    "tz": "America/New_York"
+  },
+  "646": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "647": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "ON",
+    "tz": "America/Toronto"
+  },
+  "650": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "651": {
+    "country": "US",
+    "label": "Central",
+    "state": "MN",
+    "tz": "America/Chicago"
+  },
+  "656": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "FL",
+    "tz": "America/New_York"
+  },
+  "657": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "659": {
+    "country": "US",
+    "label": "Central",
+    "state": "AL",
+    "tz": "America/Chicago"
+  },
+  "660": {
+    "country": "US",
+    "label": "Central",
+    "state": "MO",
+    "tz": "America/Chicago"
+  },
+  "661": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "662": {
+    "country": "US",
+    "label": "Central",
+    "state": "MS",
+    "tz": "America/Chicago"
+  },
+  "667": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MD",
+    "tz": "America/New_York"
+  },
+  "669": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "672": {
+    "country": "CA",
+    "label": "Pacific",
+    "state": "BC",
+    "tz": "America/Vancouver"
+  },
+  "678": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "GA",
+    "tz": "America/New_York"
+  },
+  "679": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MI",
+    "tz": "America/Detroit"
+  },
+  "680": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "681": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "WV",
+    "tz": "America/New_York"
+  },
+  "682": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "683": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "ON",
+    "tz": "America/Toronto"
+  },
+  "686": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "VA",
+    "tz": "America/New_York"
+  },
+  "689": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "FL",
+    "tz": "America/New_York"
+  },
+  "701": {
+    "country": "US",
+    "label": "Central",
+    "state": "ND",
+    "tz": "America/Chicago"
+  },
+  "702": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "NV",
+    "tz": "America/Los_Angeles"
+  },
+  "703": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "VA",
+    "tz": "America/New_York"
+  },
+  "704": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NC",
+    "tz": "America/New_York"
+  },
+  "705": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "ON",
+    "tz": "America/Toronto"
+  },
+  "706": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "GA",
+    "tz": "America/New_York"
+  },
+  "707": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "708": {
+    "country": "US",
+    "label": "Central",
+    "state": "IL",
+    "tz": "America/Chicago"
+  },
+  "709": {
+    "country": "CA",
+    "label": "Newfoundland",
+    "state": "NL",
+    "tz": "America/St_Johns"
+  },
+  "712": {
+    "country": "US",
+    "label": "Central",
+    "state": "IA",
+    "tz": "America/Chicago"
+  },
+  "713": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "714": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "715": {
+    "country": "US",
+    "label": "Central",
+    "state": "WI",
+    "tz": "America/Chicago"
+  },
+  "716": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "717": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "PA",
+    "tz": "America/New_York"
+  },
+  "718": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "719": {
+    "country": "US",
+    "label": "Mountain",
+    "state": "CO",
+    "tz": "America/Denver"
+  },
+  "720": {
+    "country": "US",
+    "label": "Mountain",
+    "state": "CO",
+    "tz": "America/Denver"
+  },
+  "724": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "PA",
+    "tz": "America/New_York"
+  },
+  "725": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "NV",
+    "tz": "America/Los_Angeles"
+  },
+  "726": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "727": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "FL",
+    "tz": "America/New_York"
+  },
+  "728": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "FL",
+    "tz": "America/New_York"
+  },
+  "729": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "TN",
+    "tz": "America/New_York"
+  },
+  "730": {
+    "country": "US",
+    "label": "Central",
+    "state": "IL",
+    "tz": "America/Chicago"
+  },
+  "731": {
+    "country": "US",
+    "label": "Central",
+    "state": "TN",
+    "tz": "America/Chicago"
+  },
+  "732": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NJ",
+    "tz": "America/New_York"
+  },
+  "734": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MI",
+    "tz": "America/Detroit"
+  },
+  "737": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "738": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "740": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "OH",
+    "tz": "America/New_York"
+  },
+  "742": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "ON",
+    "tz": "America/Toronto"
+  },
+  "743": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NC",
+    "tz": "America/New_York"
+  },
+  "747": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "748": {
+    "country": "US",
+    "label": "Mountain",
+    "state": "CO",
+    "tz": "America/Denver"
+  },
+  "753": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "ON",
+    "tz": "America/Toronto"
+  },
+  "754": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "FL",
+    "tz": "America/New_York"
+  },
+  "757": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "VA",
+    "tz": "America/New_York"
+  },
+  "760": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "762": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "GA",
+    "tz": "America/New_York"
+  },
+  "763": {
+    "country": "US",
+    "label": "Central",
+    "state": "MN",
+    "tz": "America/Chicago"
+  },
+  "765": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "IN",
+    "tz": "America/Indiana/Indianapolis"
+  },
+  "769": {
+    "country": "US",
+    "label": "Central",
+    "state": "MS",
+    "tz": "America/Chicago"
+  },
+  "770": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "GA",
+    "tz": "America/New_York"
+  },
+  "771": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "DC",
+    "tz": "America/New_York"
+  },
+  "772": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "FL",
+    "tz": "America/New_York"
+  },
+  "773": {
+    "country": "US",
+    "label": "Central",
+    "state": "IL",
+    "tz": "America/Chicago"
+  },
+  "774": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MA",
+    "tz": "America/New_York"
+  },
+  "775": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "NV",
+    "tz": "America/Los_Angeles"
+  },
+  "778": {
+    "country": "CA",
+    "label": "Pacific",
+    "state": "BC",
+    "tz": "America/Vancouver"
+  },
+  "779": {
+    "country": "US",
+    "label": "Central",
+    "state": "IL",
+    "tz": "America/Chicago"
+  },
+  "780": {
+    "country": "CA",
+    "label": "Mountain",
+    "state": "AB",
+    "tz": "America/Edmonton"
+  },
+  "781": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MA",
+    "tz": "America/New_York"
+  },
+  "782": {
+    "country": "CA",
+    "label": "Atlantic",
+    "shared_with": [
+      "NS",
+      "PE"
+    ],
+    "state": "NS",
+    "tz": "America/Halifax"
+  },
+  "785": {
+    "country": "US",
+    "label": "Central",
+    "state": "KS",
+    "tz": "America/Chicago"
+  },
+  "786": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "FL",
+    "tz": "America/New_York"
+  },
+  "801": {
+    "country": "US",
+    "label": "Mountain",
+    "state": "UT",
+    "tz": "America/Denver"
+  },
+  "802": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "VT",
+    "tz": "America/New_York"
+  },
+  "803": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "SC",
+    "tz": "America/New_York"
+  },
+  "804": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "VA",
+    "tz": "America/New_York"
+  },
+  "805": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "806": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "807": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "ON",
+    "tz": "America/Toronto"
+  },
+  "808": {
+    "country": "US",
+    "label": "Hawaii (no DST)",
+    "state": "HI",
+    "tz": "Pacific/Honolulu"
+  },
+  "810": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MI",
+    "tz": "America/Detroit"
+  },
+  "812": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "IN",
+    "tz": "America/Indiana/Indianapolis"
+  },
+  "813": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "FL",
+    "tz": "America/New_York"
+  },
+  "814": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "PA",
+    "tz": "America/New_York"
+  },
+  "815": {
+    "country": "US",
+    "label": "Central",
+    "state": "IL",
+    "tz": "America/Chicago"
+  },
+  "816": {
+    "country": "US",
+    "label": "Central",
+    "state": "MO",
+    "tz": "America/Chicago"
+  },
+  "817": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "818": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "819": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "QC",
+    "tz": "America/Montreal"
+  },
+  "820": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "821": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "SC",
+    "tz": "America/New_York"
+  },
+  "825": {
+    "country": "CA",
+    "label": "Mountain",
+    "state": "AB",
+    "tz": "America/Edmonton"
+  },
+  "826": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "VA",
+    "tz": "America/New_York"
+  },
+  "828": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NC",
+    "tz": "America/New_York"
+  },
+  "830": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "831": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "832": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "835": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "PA",
+    "tz": "America/New_York"
+  },
+  "837": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "838": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "839": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "SC",
+    "tz": "America/New_York"
+  },
+  "840": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "843": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "SC",
+    "tz": "America/New_York"
+  },
+  "845": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "847": {
+    "country": "US",
+    "label": "Central",
+    "state": "IL",
+    "tz": "America/Chicago"
+  },
+  "848": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NJ",
+    "tz": "America/New_York"
+  },
+  "850": {
+    "country": "US",
+    "label": "Central",
+    "state": "FL",
+    "tz": "America/Chicago"
+  },
+  "854": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "SC",
+    "tz": "America/New_York"
+  },
+  "856": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NJ",
+    "tz": "America/New_York"
+  },
+  "857": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MA",
+    "tz": "America/New_York"
+  },
+  "858": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "859": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "KY",
+    "tz": "America/New_York"
+  },
+  "860": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "CT",
+    "tz": "America/New_York"
+  },
+  "861": {
+    "country": "US",
+    "label": "Central",
+    "state": "IL",
+    "tz": "America/Chicago"
+  },
+  "862": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NJ",
+    "tz": "America/New_York"
+  },
+  "863": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "FL",
+    "tz": "America/New_York"
+  },
+  "864": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "SC",
+    "tz": "America/New_York"
+  },
+  "865": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "TN",
+    "tz": "America/New_York"
+  },
+  "867": {
+    "country": "CA",
+    "label": "Yukon",
+    "shared_with": [
+      "YT",
+      "NT",
+      "NU"
+    ],
+    "state": "YT",
+    "tz": "America/Whitehorse"
+  },
+  "870": {
+    "country": "US",
+    "label": "Central",
+    "state": "AR",
+    "tz": "America/Chicago"
+  },
+  "872": {
+    "country": "US",
+    "label": "Central",
+    "state": "IL",
+    "tz": "America/Chicago"
+  },
+  "873": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "QC",
+    "tz": "America/Montreal"
+  },
+  "878": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "PA",
+    "tz": "America/New_York"
+  },
+  "879": {
+    "country": "CA",
+    "label": "Newfoundland",
+    "state": "NL",
+    "tz": "America/St_Johns"
+  },
+  "901": {
+    "country": "US",
+    "label": "Central",
+    "state": "TN",
+    "tz": "America/Chicago"
+  },
+  "902": {
+    "country": "CA",
+    "label": "Atlantic",
+    "shared_with": [
+      "NS",
+      "PE"
+    ],
+    "state": "NS",
+    "tz": "America/Halifax"
+  },
+  "903": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "904": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "FL",
+    "tz": "America/New_York"
+  },
+  "905": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "ON",
+    "tz": "America/Toronto"
+  },
+  "906": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MI",
+    "tz": "America/Detroit"
+  },
+  "907": {
+    "country": "US",
+    "label": "Alaska",
+    "state": "AK",
+    "tz": "America/Anchorage"
+  },
+  "908": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NJ",
+    "tz": "America/New_York"
+  },
+  "909": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "910": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NC",
+    "tz": "America/New_York"
+  },
+  "912": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "GA",
+    "tz": "America/New_York"
+  },
+  "913": {
+    "country": "US",
+    "label": "Central",
+    "state": "KS",
+    "tz": "America/Chicago"
+  },
+  "914": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "915": {
+    "country": "US",
+    "label": "Mountain",
+    "state": "TX",
+    "tz": "America/Denver"
+  },
+  "916": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "917": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "918": {
+    "country": "US",
+    "label": "Central",
+    "state": "OK",
+    "tz": "America/Chicago"
+  },
+  "919": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NC",
+    "tz": "America/New_York"
+  },
+  "920": {
+    "country": "US",
+    "label": "Central",
+    "state": "WI",
+    "tz": "America/Chicago"
+  },
+  "924": {
+    "country": "US",
+    "label": "Central",
+    "state": "MN",
+    "tz": "America/Chicago"
+  },
+  "925": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "928": {
+    "country": "US",
+    "label": "Mountain (no DST)",
+    "state": "AZ",
+    "tz": "America/Phoenix"
+  },
+  "929": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "930": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "IN",
+    "tz": "America/Indiana/Indianapolis"
+  },
+  "931": {
+    "country": "US",
+    "label": "Central",
+    "state": "TN",
+    "tz": "America/Chicago"
+  },
+  "934": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NY",
+    "tz": "America/New_York"
+  },
+  "936": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "937": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "OH",
+    "tz": "America/New_York"
+  },
+  "938": {
+    "country": "US",
+    "label": "Central",
+    "state": "AL",
+    "tz": "America/Chicago"
+  },
+  "940": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "941": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "FL",
+    "tz": "America/New_York"
+  },
+  "942": {
+    "country": "CA",
+    "label": "Eastern",
+    "state": "ON",
+    "tz": "America/Toronto"
+  },
+  "943": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "GA",
+    "tz": "America/New_York"
+  },
+  "945": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "947": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MI",
+    "tz": "America/Detroit"
+  },
+  "948": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "VA",
+    "tz": "America/New_York"
+  },
+  "949": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "951": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "CA",
+    "tz": "America/Los_Angeles"
+  },
+  "952": {
+    "country": "US",
+    "label": "Central",
+    "state": "MN",
+    "tz": "America/Chicago"
+  },
+  "954": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "FL",
+    "tz": "America/New_York"
+  },
+  "956": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "959": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "CT",
+    "tz": "America/New_York"
+  },
+  "970": {
+    "country": "US",
+    "label": "Mountain",
+    "state": "CO",
+    "tz": "America/Denver"
+  },
+  "971": {
+    "country": "US",
+    "label": "Pacific",
+    "state": "OR",
+    "tz": "America/Los_Angeles"
+  },
+  "972": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "973": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NJ",
+    "tz": "America/New_York"
+  },
+  "975": {
+    "country": "US",
+    "label": "Central",
+    "state": "MO",
+    "tz": "America/Chicago"
+  },
+  "978": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MA",
+    "tz": "America/New_York"
+  },
+  "979": {
+    "country": "US",
+    "label": "Central",
+    "state": "TX",
+    "tz": "America/Chicago"
+  },
+  "980": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NC",
+    "tz": "America/New_York"
+  },
+  "983": {
+    "country": "US",
+    "label": "Mountain",
+    "state": "CO",
+    "tz": "America/Denver"
+  },
+  "984": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "NC",
+    "tz": "America/New_York"
+  },
+  "985": {
+    "country": "US",
+    "label": "Central",
+    "state": "LA",
+    "tz": "America/Chicago"
+  },
+  "986": {
+    "country": "US",
+    "label": "Mountain",
+    "state": "ID",
+    "tz": "America/Boise"
+  },
+  "989": {
+    "country": "US",
+    "label": "Eastern",
+    "state": "MI",
+    "tz": "America/Detroit"
+  }
+}
