@@ -22,6 +22,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Stage 3.2.1 safety gate — until Stripe customer-charging is wired, this
+  // endpoint would charge the Vercel account's saved payment method directly.
+  // Set DOMAIN_PURCHASE_ENABLED=true ONLY after Stripe-Connect / metered
+  // billing is confirmed working, otherwise customers can buy domains for
+  // free and we eat the wholesale cost.
+  if (process.env.DOMAIN_PURCHASE_ENABLED !== "true") {
+    return NextResponse.json(
+      {
+        error: "domain_purchase_disabled",
+        message:
+          "Domain purchase is temporarily disabled while we finalize billing. You can still connect a domain you already own using the Connect tab.",
+      },
+      { status: 503 }
+    );
+  }
+
   const body = await request.json().catch(() => ({}));
   const { domain } = body as { domain?: string };
 

@@ -13,6 +13,7 @@ import {
   type UpdateOrgBrandInput,
 } from '@/lib/schemas/stage3'
 import { BrandingPreview } from './BrandingPreview'
+import CustomDomainManager from '@/components/agency/CustomDomainManager'
 
 interface Props {
   orgId: string
@@ -444,26 +445,8 @@ export function BrandingClient({ orgId, initialBrand }: Props) {
             />
           </Section>
 
-          <Section title="Custom domain" description="Point your own domain at your portal (DNS setup required)." icon={Globe}>
-            <TextField
-              label="Domain"
-              value={brand.customDomain}
-              onChange={(v) => update('customDomain', v || null)}
-              placeholder="app.yourbrand.com"
-              hint={
-                brand.customDomain
-                  ? `Status: ${brand.domainStatus}. ${
-                      brand.domainStatus === 'verified'
-                        ? '✓ Live'
-                        : brand.domainStatus === 'dns_pending'
-                          ? 'Waiting for DNS propagation.'
-                          : brand.domainStatus === 'error'
-                            ? 'Verification failed — check DNS records.'
-                            : 'Not yet verified. See domain setup instructions.'
-                    }`
-                  : 'Leave blank to use the default leadfriendly.com domain.'
-              }
-            />
+          <Section title="Custom domain" description="Buy a new domain or connect one you already own. DNS verification + SSL handled automatically." icon={Globe}>
+            <CustomDomainManager />
           </Section>
 
           <Section title="Advanced" icon={Palette}>
