@@ -7,6 +7,8 @@ import { createRoom, deleteRoom, dispatchAgent } from "@/lib/livekit/server";
 import { buildCallRecordingEgress } from "@/lib/livekit/egress";
 import { createSipParticipant } from "@/lib/livekit/sip";
 import { substituteVariables, type PromptVarContext } from "@/lib/prompt-vars";
+import { enforceTcpa } from "@/lib/tcpa/enforce";
+import { writeOverrideAudit } from "@/lib/tcpa/audit";
 
 /**
  * POST /api/calls/sip-outbound
@@ -65,7 +67,7 @@ export async function POST(req: NextRequest) {
 
     const { data: profile } = await supabase
       .from("profiles")
-      .select("organization_id")
+      .select("organization_id, role, full_name")
       .eq("id", user.id)
       .single();
 
@@ -73,6 +75,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Profile not found" }, { status: 404 });
     }
     const orgId = profile.organization_id as string;
+    const userRole = (profile.role as string | null) ?? null;
+    const userFullName = (profile.full_name as string | null) ?? null;
 
     // ── 3. Parse body ─────────────────────────────────────────
     let body: {
@@ -81,6 +85,8 @@ export async function POST(req: NextRequest) {
       contactPhone?: string;
       campaignId?: string;
       isTest?: boolean;
+      overrideToken?: string;
+      overrideNote?: string;
     } = {};
     try {
       body = await req.json();
@@ -155,6 +161,99 @@ export async function POST(req: NextRequest) {
           { error: "contactPhone cannot be empty" },
           { status: 400 },
         );
+      }
+    }
+
+    // ── 5b. TCPA compliance gate (manual mode) ────────────────
+    // Only enforced when a contactId is present — test calls and raw-phone
+    // paths skip the gate by design (no contact row to evaluate against).
+    // Runs before number-pool rotation + calls.insert so a blocked call
+    // neither burns a number nor creates a DB row.
+    const overrideToken =
+      typeof body.overrideToken === "string" && body.overrideToken.trim()
+        ? body.overrideToken.trim()
+        : undefined;
+    const overrideNote =
+      typeof body.overrideNote === "string" ? body.overrideNote.slice(0, 500) : null;
+
+    let overrideInfo: {
+      codes: string[];
+      auditPayload: Parameters<typeof writeOverrideAudit>[0]["auditPayload"];
+    } | null = null;
+
+    if (c && contactId) {
+      const verdict = await enforceTcpa({
+        orgId,
+        userId: user.id,
+        userRole,
+        contactId,
+        mode: "manual",
+        overrideToken,
+        supabase: supabaseAdmin,
+      });
+
+      if (verdict.status === "hard_blocked") {
+        return NextResponse.json(
+          {
+            ok: false,
+            blocked: true,
+            blocks: verdict.blocks,
+            evaluatedAt: new Date().toISOString(),
+          },
+          { status: 403 },
+        );
+      }
+      if (verdict.status === "role_denied") {
+        return NextResponse.json(
+          {
+            ok: false,
+            blocked: true,
+            blocks: [
+              {
+                code: "insufficient_role",
+                reason: "Your role cannot override compliance warnings. Contact an admin.",
+                severity: "hard",
+              },
+            ],
+            evaluatedAt: new Date().toISOString(),
+          },
+          { status: 403 },
+        );
+      }
+      if (verdict.status === "soft_blocked") {
+        return NextResponse.json(
+          {
+            ok: false,
+            blocked: false,
+            requiresOverride: true,
+            warnings: verdict.warnings,
+            overrideToken: verdict.overrideToken,
+            evaluatedAt: new Date().toISOString(),
+          },
+          { status: 409 },
+        );
+      }
+      if (verdict.status === "token_invalid") {
+        return NextResponse.json(
+          {
+            ok: false,
+            blocked: false,
+            requiresOverride: true,
+            warnings: verdict.warnings,
+            overrideToken: verdict.overrideToken,
+            tokenExpired: true,
+            tokenReason: verdict.reason,
+            evaluatedAt: new Date().toISOString(),
+          },
+          { status: 409 },
+        );
+      }
+      // status is "clear" or "override_accepted"
+      if (verdict.status === "override_accepted") {
+        overrideInfo = {
+          codes: verdict.overriddenCodes,
+          auditPayload: verdict.auditPayload,
+        };
       }
     }
 
@@ -290,6 +389,38 @@ export async function POST(req: NextRequest) {
       : isTest
         ? "Test Call"
         : "Contact";
+
+    // Stamp calls.metadata.tcpa_override + write the audit row when the rep
+    // placed this call over a soft-block warning.
+    if (overrideInfo) {
+      await supabaseAdmin
+        .from("calls")
+        .update({
+          metadata: {
+            tcpa_override: {
+              codes: overrideInfo.codes,
+              at: new Date().toISOString(),
+              by: user.id,
+            },
+          },
+        })
+        .eq("id", callId);
+
+      await writeOverrideAudit({
+        supabase: supabaseAdmin,
+        orgId,
+        userId: user.id,
+        userName: userFullName,
+        contactId: (c?.id as string) ?? contactId ?? "",
+        contactDisplayName: displayName,
+        contactPhoneE164: contactPhone,
+        callId,
+        auditPayload: overrideInfo.auditPayload,
+        path: "sip_outbound_manual",
+        note: overrideNote,
+        ipAddress: req.headers.get("x-forwarded-for") ?? null,
+      });
+    }
 
     // ── 9. Build metadata and egress config ───────────────────
     //
