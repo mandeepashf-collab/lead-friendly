@@ -103,6 +103,13 @@ function parseCSV(text: string): { headers: string[]; rows: Record<string, strin
   return { headers, rows };
 }
 
+// Slugify a user-typed custom field key so it lands cleanly in JSONB.
+// "Loan Amount" -> "loan_amount", "Birth Date!" -> "birth_date".
+const slugifyKey = (raw: string) =>
+  raw.trim().toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
 const FIELD_MAP: Record<string, string> = {
   first_name: "first_name", firstname: "first_name", "first name": "first_name",
   last_name: "last_name", lastname: "last_name", "last name": "last_name",
@@ -124,6 +131,9 @@ export function ImportDialog({ onClose, onImported }: Props) {
   const [fileName, setFileName] = useState("");
   const [parsed, setParsed] = useState<{ headers: string[]; rows: Record<string, string>[] }>({ headers: [], rows: [] });
   const [mapping, setMapping] = useState<Record<string, string>>({});
+  // When mapping[csvCol] === "__custom__", customKeys[csvCol] holds the
+  // user-typed key name that the value will land under in custom_fields.
+  const [customKeys, setCustomKeys] = useState<Record<string, string>>({});
   const [importResult, setImportResult] = useState({ count: 0, skipped: 0, error: "" });
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -162,25 +172,43 @@ export function ImportDialog({ onClose, onImported }: Props) {
     // WITHOUT tags, and tag lists keyed by the same index. Tags are NOT put on
     // the contact row — they're RPC'd after insert so contact_tags stays in sync.
     const tagsByRowIndex: string[][] = [];
+    const customFieldsByIndex: Record<string, string>[] = [];
     const contacts: ParsedRow[] = [];
+
+    // Precompute the list of CSV cols that are "Custom Field" so we don't
+    // re-check on every row. Keys are user-typed and may include non-slug
+    // characters — slugifyKey normalizes them. Empty keys are dropped.
+    const customCols: { csvCol: string; key: string }[] = Object.entries(mapping)
+      .filter(([, v]) => v === "__custom__")
+      .map(([csvCol]) => ({ csvCol, key: slugifyKey(customKeys[csvCol] || "") }))
+      .filter((c) => c.key.length > 0);
+
     for (const row of parsed.rows) {
       const contact: Record<string, unknown> = {};
       let rowTags: string[] = [];
+      const rowCustom: Record<string, string> = {};
       Object.entries(mapping).forEach(([csvCol, dbField]) => {
         if (dbField === "tags") {
           rowTags = row[csvCol]?.split(";").map((t) => t.trim()).filter(Boolean) || [];
+        } else if (dbField === "__custom__") {
+          // Handled in customCols loop below
         } else {
           contact[dbField] = row[csvCol] || undefined;
         }
       });
+      for (const { csvCol, key } of customCols) {
+        const v = row[csvCol];
+        if (v !== undefined && v !== "") rowCustom[key] = v;
+      }
       const c = contact as ParsedRow;
       if (c.first_name || c.email || c.phone) {
         contacts.push(c);
         tagsByRowIndex.push(rowTags);
+        customFieldsByIndex.push(rowCustom);
       }
     }
 
-    const result = await bulkImportContacts(contacts);
+    const result = await bulkImportContacts(contacts, customFieldsByIndex);
 
     // insertedIds is now aligned 1:1 with input (nulls mark deduped rows).
     // Apply tags only to rows that actually inserted.
@@ -191,6 +219,15 @@ export function ImportDialog({ onClose, onImported }: Props) {
         pairs.push({ contact_id: id, tag, source: "csv_import" });
       }
     });
+
+    // Apply status-fallback tags (rows whose original status didn't match
+    // the enum or a known alias — we preserved the original as a tag).
+    for (const { rowIndex, tag } of result.statusFallbackPairs) {
+      const id = result.insertedIds[rowIndex];
+      if (!id) continue;
+      pairs.push({ contact_id: id, tag, source: "csv_import" });
+    }
+
     if (pairs.length) await bulkAddContactTags(pairs);
 
     setImportResult({
@@ -216,6 +253,7 @@ export function ImportDialog({ onClose, onImported }: Props) {
     { value: "source", label: "Source" },
     { value: "status", label: "Status" },
     { value: "tags", label: "Tags (semicolon-separated)" },
+    { value: "__custom__", label: "Custom Field" },
   ];
 
   return (
@@ -268,16 +306,28 @@ export function ImportDialog({ onClose, onImported }: Props) {
               <div>
                 <h3 className="mb-2 text-sm font-medium text-zinc-300">Map CSV columns to contact fields:</h3>
                 <div className="space-y-2">
-                  {parsed.headers.map((header) => (
-                    <div key={header} className="flex items-center gap-3">
-                      <span className="w-40 truncate text-sm text-zinc-400">{header}</span>
-                      <span className="text-zinc-600">→</span>
-                      <select value={mapping[header] || ""} onChange={(e) => setMapping({ ...mapping, [header]: e.target.value })}
-                        className="h-8 flex-1 rounded-lg border border-zinc-700 bg-zinc-800 px-2 text-sm text-white focus:border-indigo-500 focus:outline-none">
-                        {contactFields.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-                      </select>
-                    </div>
-                  ))}
+                  {parsed.headers.map((header) => {
+                    const mapped = mapping[header] || "";
+                    const isCustom = mapped === "__custom__";
+                    return (
+                      <div key={header} className="flex items-center gap-3">
+                        <span className="w-40 truncate text-sm text-zinc-400">{header}</span>
+                        <span className="text-zinc-600">→</span>
+                        <select value={mapped} onChange={(e) => setMapping({ ...mapping, [header]: e.target.value })}
+                          className={`h-8 rounded-lg border border-zinc-700 bg-zinc-800 px-2 text-sm text-white focus:border-indigo-500 focus:outline-none ${isCustom ? "flex-none w-44" : "flex-1"}`}>
+                          {contactFields.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                        </select>
+                        {isCustom && (
+                          <input
+                            value={customKeys[header] || ""}
+                            onChange={(e) => setCustomKeys({ ...customKeys, [header]: e.target.value })}
+                            placeholder="field_name (e.g. loan_amount)"
+                            className="h-8 flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-2 text-sm text-zinc-300 placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none"
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 

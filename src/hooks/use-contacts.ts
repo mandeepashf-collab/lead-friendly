@@ -137,6 +137,60 @@ export async function deleteContact(
   return { error: error?.message || null };
 }
 
+// ─── Status sanitization ────────────────────────────────────────────────
+// The contacts_status_check constraint permits only a fixed enum. Real CSVs
+// routinely use aliases like "New Lead" or industry codes like "CI-A". We map
+// known aliases to valid enum values; unknown values default to "new" and
+// surface as a fallback tag (status-<slug>) so the value isn't lost.
+const VALID_STATUS = new Set([
+  "new", "contacted", "qualified", "proposal",
+  "negotiation", "won", "lost", "do_not_contact",
+]);
+
+const STATUS_ALIASES: Record<string, string> = {
+  // new
+  "new lead": "new", "fresh": "new", "lead": "new", "unworked": "new",
+  // contacted
+  "touched": "contacted", "reached": "contacted", "attempted": "contacted",
+  // qualified
+  "interested": "qualified", "warm": "qualified", "hot": "qualified",
+  // proposal / negotiation
+  "quoted": "proposal", "quote sent": "proposal",
+  "negotiating": "negotiation", "in negotiation": "negotiation",
+  // won
+  "closed": "won", "converted": "won", "customer": "won", "client": "won",
+  // lost
+  "dead": "lost", "cold": "lost", "not interested": "lost", "disqualified": "lost",
+  // DNC variants
+  "dnc": "do_not_contact",
+  "do not call": "do_not_contact",
+  "do not contact": "do_not_contact",
+};
+
+function slug(raw: string): string {
+  return raw.trim().toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/**
+ * Given a CSV-provided status value, return { status, fallbackTag }.
+ * - If the value matches the enum directly, use it.
+ * - If it matches a known alias, use the mapped enum value.
+ * - Otherwise, default to "new" and emit a fallbackTag "status-<slug>"
+ *   so the original value is preserved as a tag on the contact.
+ */
+function sanitizeStatus(raw: string | undefined | null):
+  { status: string; fallbackTag: string | null } {
+  if (!raw) return { status: "new", fallbackTag: null };
+  const normalized = raw.trim().toLowerCase();
+  if (!normalized) return { status: "new", fallbackTag: null };
+  if (VALID_STATUS.has(normalized)) return { status: normalized, fallbackTag: null };
+  if (STATUS_ALIASES[normalized]) return { status: STATUS_ALIASES[normalized], fallbackTag: null };
+  // Unknown — preserve as tag
+  return { status: "new", fallbackTag: `status-${slug(raw)}` };
+}
+
 /**
  * Bulk-import contacts from a CSV upload.
  *
@@ -147,14 +201,21 @@ export async function deleteContact(
  * Returns { count: inserted, skipped: duplicates, error }.
  */
 export async function bulkImportContacts(
-  contacts: Partial<Contact>[]
-): Promise<{ count: number; skipped: number; error: string | null; insertedIds: (string | null)[] }> {
+  contacts: Partial<Contact>[],
+  customFieldsByIndex?: Record<string, string>[],
+): Promise<{
+  count: number;
+  skipped: number;
+  error: string | null;
+  insertedIds: (string | null)[];
+  statusFallbackPairs: { rowIndex: number; tag: string }[];
+}> {
   const supabase = createClient();
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return { count: 0, skipped: 0, error: "Not authenticated", insertedIds: [] };
+  if (!user) return { count: 0, skipped: 0, error: "Not authenticated", insertedIds: [], statusFallbackPairs: [] };
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -162,7 +223,7 @@ export async function bulkImportContacts(
     .eq("id", user.id)
     .single();
 
-  if (!profile) return { count: 0, skipped: 0, error: "No profile found", insertedIds: [] };
+  if (!profile) return { count: 0, skipped: 0, error: "No profile found", insertedIds: [], statusFallbackPairs: [] };
 
   // Normalize phones to digits-only for matching (store original in phone field)
   const normalize = (s: string | undefined | null) =>
@@ -192,9 +253,14 @@ export async function bulkImportContacts(
   // Per-row alignment: dupeMask[i] = true if input row i was deduped and skipped.
   // We track this so the final insertedIds array aligns 1:1 with the input.
   const dupeMask: boolean[] = [];
+  // rowIndex here refers to the ORIGINAL contacts[] input index.
+  // We track fallback tags per-input-row so they align 1:1 with insertedIds
+  // on the caller side.
+  const statusFallbackPairs: { rowIndex: number; tag: string }[] = [];
   let skipped = 0;
   const rows: Record<string, unknown>[] = [];
-  for (const c of contacts) {
+  for (let i = 0; i < contacts.length; i++) {
+    const c = contacts[i];
     const phoneKey = normalizePhone(c.phone as string | null | undefined);
     const emailKey = normalize(c.email as string | null | undefined);
 
@@ -210,8 +276,23 @@ export async function bulkImportContacts(
     dupeMask.push(false);
     if (phoneKey) seenPhones.add(phoneKey);
     if (emailKey) seenEmails.add(emailKey);
+
+    // Sanitize status: either pass through, map alias, or default + fallback tag
+    const { status, fallbackTag } = sanitizeStatus(c.status as string | null | undefined);
+    if (fallbackTag) {
+      statusFallbackPairs.push({ rowIndex: i, tag: fallbackTag });
+    }
+
+    // Merge custom fields for this row into a JSONB blob
+    const customFields = customFieldsByIndex?.[i];
+    const customJson = customFields && Object.keys(customFields).length
+      ? customFields
+      : undefined;
+
     rows.push({
       ...c,
+      status,
+      custom_fields: customJson,
       organization_id: profile.organization_id,
       source: c.source || "csv_import",
     });
@@ -219,7 +300,11 @@ export async function bulkImportContacts(
 
   if (rows.length === 0) {
     // Fill insertedIds with nulls to match input length
-    return { count: 0, skipped, error: null, insertedIds: dupeMask.map(() => null) };
+    return {
+      count: 0, skipped, error: null,
+      insertedIds: dupeMask.map(() => null),
+      statusFallbackPairs,
+    };
   }
 
   // 3) Insert in chunks of 500 so we don't hit payload limits on huge uploads
@@ -231,7 +316,7 @@ export async function bulkImportContacts(
     if (error) {
       // Align what we got so far back onto the dupeMask; later entries are nulls.
       const aligned = alignInsertedIds(dupeMask, insertedIdsLinear);
-      return { count: inserted, skipped, error: error.message, insertedIds: aligned };
+      return { count: inserted, skipped, error: error.message, insertedIds: aligned, statusFallbackPairs };
     }
     inserted += data?.length || 0;
     for (const row of data ?? []) {
@@ -239,7 +324,11 @@ export async function bulkImportContacts(
     }
   }
 
-  return { count: inserted, skipped, error: null, insertedIds: alignInsertedIds(dupeMask, insertedIdsLinear) };
+  return {
+    count: inserted, skipped, error: null,
+    insertedIds: alignInsertedIds(dupeMask, insertedIdsLinear),
+    statusFallbackPairs,
+  };
 }
 
 /**
