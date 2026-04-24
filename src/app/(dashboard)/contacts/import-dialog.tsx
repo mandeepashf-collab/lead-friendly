@@ -370,24 +370,52 @@ export function ImportDialog({ onClose, onImported }: Props) {
     reader.readAsText(file);
   };
 
-  // Stage 1.6.2 Fix C: re-run regex-based mapping on columns currently set
-  // to Skip. Never overrides user's explicit choices. Idempotent.
+  // Stage 1.6.2 Fix C + 1.6.3 Fix 4: re-run regex-based mapping on columns
+  // currently set to Skip. Never overrides user's explicit choices. Idempotent.
+  // For columns with no rule match but a non-empty first-row value, fall back
+  // to Custom Field with the normalized column name as the JSONB key so
+  // domain-specific imports (loan_amount, lender, county, etc.) land somewhere
+  // instead of silently skipping.
+  //
+  // Batched setters: compute both nextMapping and nextCustomKeys from a single
+  // read of the current state, then dispatch both. React 18 batches into one
+  // render, so the user sees both changes at once.
   const handleAutoDetect = () => {
-    setMapping((prev) => {
-      const next = { ...prev };
-      let matchCount = 0;
-      for (const col of parsed.headers) {
-        const current = next[col] || "";
-        if (current && current !== "") continue; // Skip (or user-picked non-empty): leave alone
-        const detected = autoDetectMapping(col);
-        if (detected) {
-          next[col] = detected;
-          matchCount++;
+    const nextMapping = { ...mapping };
+    const nextCustomKeys = { ...customKeys };
+    let byRule = 0;
+    let asCustom = 0;
+
+    for (const col of parsed.headers) {
+      const current = nextMapping[col] || "";
+      if (current && current !== "") continue; // user-picked non-empty: leave alone
+
+      const detected = autoDetectMapping(col);
+      if (detected) {
+        nextMapping[col] = detected;
+        byRule++;
+        // Trace: status-column sanity check per Mandeep's earlier question
+        if (col.toLowerCase() === "status") {
+          console.log(`[auto-detect] status column matched rule → "${detected}"`);
         }
+        continue;
       }
-      console.log(`[auto-detect] matched ${matchCount} columns`);
-      return next;
-    });
+
+      // Fallback: non-empty first-row value → Custom Field
+      const firstRowValue = parsed.rows[0]?.[col];
+      const hasData = firstRowValue != null && String(firstRowValue).trim() !== "";
+      if (hasData) {
+        nextMapping[col] = "__custom__";
+        // slugifyKey mirrors the user-typed key normalization (Stage 1.6),
+        // so "Loan Amount" → "loan_amount" matches whichever entry path is used.
+        nextCustomKeys[col] = slugifyKey(col);
+        asCustom++;
+      }
+    }
+
+    setMapping(nextMapping);
+    setCustomKeys(nextCustomKeys);
+    console.log(`[auto-detect] ${byRule} by rule, ${asCustom} as custom field`);
   };
 
   const handleDrop = (e: React.DragEvent) => {
