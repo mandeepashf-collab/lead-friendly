@@ -184,7 +184,7 @@ export async function middleware(request: NextRequest) {
 
   // ── Custom domain detection ─────────────────────────────────
   const isMainDomain = hostname.includes('leadfriendly.com') ||
-                       hostname.includes('lead-friendly.vercel.app') ||
+                       hostname.endsWith('.vercel.app') ||
                        hostname.includes('localhost')
 
   if (!isMainDomain) {
