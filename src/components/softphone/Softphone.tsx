@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSoftphone, type SoftphoneContact } from "./SoftphoneContext";
+import { useDialWithCompliance } from "@/hooks/useDialWithCompliance";
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -74,6 +75,7 @@ const DTMF_EVENT_CODES: Record<string, number> = {
 
 export function Softphone() {
   const { pendingContact, clearPending, setInCall } = useSoftphone();
+  const { dial } = useDialWithCompliance();
 
   // Dock UI state
   const [dockState, setDockState] = useState<DockState>("idle");
@@ -438,39 +440,55 @@ export function Softphone() {
     setDockState("dialing");
     setStatusLabel("Connecting...");
 
+    const contactDisplayName =
+      [activeContact.firstName, activeContact.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim() ||
+      activeContact.company ||
+      activeContact.phone;
+
     try {
-      // 1. Initiate via our API
-      const initRes = await fetch("/api/softphone/initiate", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      // 1. Initiate via our API (runs through the compliance gate — the
+      // hook handles 403 hard blocks + 409 soft-block override modal).
+      const result = await dial({
+        endpoint: "/api/softphone/initiate",
+        body: {
           contactId: activeContact.id,
           fromNumber: selectedFromNumber,
           // Stage 1.6: forward the activeContact's phone so the server dials
           // the picker-chosen number (cell vs primary). Server validates it
           // matches contact.phone OR contact.cell_phone.
           phone: activeContact.phone,
-        }),
+        },
+        contactName: contactDisplayName,
+        phone: activeContact.phone,
       });
-      if (!initRes.ok) {
-        const errBody = (await initRes.json().catch(() => ({}))) as {
-          error?: string;
-          detail?: string;
-        };
-        throw new Error(
-          errBody.error
-            ? `${errBody.error}${errBody.detail ? ` — ${errBody.detail}` : ""}`
-            : `HTTP ${initRes.status}`,
-        );
+
+      if (!result.ok) {
+        // Hook already surfaced the error as a toast. Reset the dock so the
+        // user can retry (or pick a different contact) without a stuck
+        // "Connecting..." state. Cancel from the override modal returns the
+        // dock to ready; anything else is treated as an error.
+        if (result.reason === "cancelled") {
+          setDockState("ready");
+          setStatusLabel("");
+        } else {
+          setErrorMsg(
+            result.reason === "error" ? result.message : "Call blocked by compliance policy",
+          );
+          setDockState("error");
+          setStatusLabel("");
+        }
+        return;
       }
-      const { callId: newCallId, accessToken, serverUrl } =
-        (await initRes.json()) as {
-          callId: string;
-          accessToken: string;
-          serverUrl: string;
-          sipParticipantIdentity: string;
-        };
+
+      const { callId: newCallId, accessToken, serverUrl } = result.data as {
+        callId: string;
+        accessToken: string;
+        serverUrl: string;
+        sipParticipantIdentity: string;
+      };
 
       setCallId(newCallId);
 
@@ -550,7 +568,7 @@ export function Softphone() {
       setStatusLabel("");
       await teardownRoom();
     }
-  }, [activeContact, selectedFromNumber, selectedMicId, teardownRoom]);
+  }, [activeContact, selectedFromNumber, selectedMicId, teardownRoom, dial]);
 
   const endCall = useCallback(async () => {
     setDockState("ending");
