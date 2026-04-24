@@ -221,9 +221,17 @@ export default function ContactsPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-zinc-800">
-                <th className="w-10 px-4 py-3">
-                  <input type="checkbox" checked={contacts.length > 0 && selectedIds.size === contacts.length} onChange={() => { if (selectedIds.size === contacts.length) setSelectedIds(new Set()); else setSelectedIds(new Set(contacts.map(c => c.id))); }}
-                    className="h-4 w-4 rounded border-zinc-600 bg-zinc-800 accent-indigo-600" />
+                <th className="w-12 px-3 py-3">
+                  {/* Stage 1.6.3: widen column + appearance-none so the checkbox
+                      renders as a visible dark-theme pill instead of a near-invisible
+                      native control on the zinc background. */}
+                  <input
+                    type="checkbox"
+                    checked={contacts.length > 0 && selectedIds.size === contacts.length}
+                    onChange={() => { if (selectedIds.size === contacts.length) setSelectedIds(new Set()); else setSelectedIds(new Set(contacts.map(c => c.id))); }}
+                    aria-label="Select all contacts"
+                    className="h-4 w-4 appearance-none rounded border border-zinc-500 bg-zinc-800 cursor-pointer hover:border-indigo-400 checked:border-indigo-500 checked:bg-indigo-600 checked:bg-[url('data:image/svg+xml;utf8,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2016%2016%22%3E%3Cpath%20fill=%22none%22%20stroke=%22white%22%20stroke-width=%222%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22%20d=%22M3.5%208.5l3%203%206-7%22/%3E%3C/svg%3E')] checked:bg-center checked:bg-no-repeat"
+                  />
                 </th>
                 {[
                   { key: "first_name", label: "Contact", sortable: true },
@@ -274,9 +282,14 @@ export default function ContactsPage() {
                 return (
                 <tr key={contact.id} className="group hover:bg-zinc-800/30">
                   {/* Checkbox — does NOT navigate */}
-                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                    <input type="checkbox" checked={selectedIds.has(contact.id)} onChange={() => toggleSelect(contact.id)}
-                      className="h-4 w-4 rounded border-zinc-600 bg-zinc-800 accent-indigo-600" />
+                  <td className="w-12 px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(contact.id)}
+                      onChange={() => toggleSelect(contact.id)}
+                      aria-label={`Select ${formatName(contact)}`}
+                      className="h-4 w-4 appearance-none rounded border border-zinc-500 bg-zinc-800 cursor-pointer hover:border-indigo-400 checked:border-indigo-500 checked:bg-indigo-600 checked:bg-[url('data:image/svg+xml;utf8,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2016%2016%22%3E%3Cpath%20fill=%22none%22%20stroke=%22white%22%20stroke-width=%222%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22%20d=%22M3.5%208.5l3%203%206-7%22/%3E%3C/svg%3E')] checked:bg-center checked:bg-no-repeat"
+                    />
                   </td>
                   {/* Name cell — explicit navigate */}
                   <td className="px-4 py-3 cursor-pointer" onClick={goToContact}>
