@@ -256,6 +256,46 @@ function CustomFieldKeyInput({
   );
 }
 
+// Truncate a CSV cell value for display next to its column header.
+// Stage 1.6.2 Fix B — gives the user a preview of what's in each column
+// before they pick a mapping. Hover shows the full via title attr.
+function formatSamplePreview(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  const str = String(value).trim();
+  if (str === "") return "(empty)";
+  if (str.length > 24) return str.slice(0, 22) + "…";
+  return str;
+}
+
+// Stage 1.6.2 Fix C — fuzzy-match rules for the Auto-detect button.
+// Order matters: first match wins, so more specific patterns go first
+// (cell_phone before phone to avoid "mobile phone" matching plain phone).
+// Mapping values match the `value` in contactFields below — NOT target DB
+// columns directly, since a few UI values differ from DB fields.
+const AUTO_DETECT_RULES: Array<{ pattern: RegExp; mapping: string }> = [
+  { pattern: /^(first[_\s-]?name|fname|first|given[_\s-]?name)$/i, mapping: "first_name" },
+  { pattern: /^(last[_\s-]?name|lname|last|surname|family[_\s-]?name)$/i, mapping: "last_name" },
+  { pattern: /^(email|email[_\s-]?address|e[_\s-]?mail)$/i, mapping: "email" },
+  { pattern: /^(cell[_\s-]?phone|cellphone|cell|mobile|mobile[_\s-]?phone|mobile[_\s-]?number)$/i, mapping: "cell_phone" },
+  { pattern: /^(phone|phone[_\s-]?number|telephone|tel|landline|home[_\s-]?phone|work[_\s-]?phone)$/i, mapping: "phone" },
+  { pattern: /^(company|organization|organisation|business|employer|company[_\s-]?name)$/i, mapping: "company_name" },
+  { pattern: /^(job[_\s-]?title|title|position|role)$/i, mapping: "job_title" },
+  { pattern: /^(street[_\s-]?1|street|address|address[_\s-]?1|addr|addr1)$/i, mapping: "address_line1" },
+  { pattern: /^(city|town)$/i, mapping: "city" },
+  { pattern: /^(state|region|province|st)$/i, mapping: "state" },
+  { pattern: /^(zip|zip[_\s-]?code|postal[_\s-]?code|postcode)$/i, mapping: "zip_code" },
+  { pattern: /^(status|stage|pipeline[_\s-]?stage|lifecycle)$/i, mapping: "status" },
+  { pattern: /^(source|lead[_\s-]?source|origin)$/i, mapping: "source" },
+];
+
+function autoDetectMapping(columnHeader: string): string | null {
+  const normalized = columnHeader.trim();
+  for (const rule of AUTO_DETECT_RULES) {
+    if (rule.pattern.test(normalized)) return rule.mapping;
+  }
+  return null;
+}
+
 const FIELD_MAP: Record<string, string> = {
   first_name: "first_name", firstname: "first_name", "first name": "first_name",
   last_name: "last_name", lastname: "last_name", "last name": "last_name",
@@ -320,6 +360,26 @@ export function ImportDialog({ onClose, onImported }: Props) {
       setStep("preview");
     };
     reader.readAsText(file);
+  };
+
+  // Stage 1.6.2 Fix C: re-run regex-based mapping on columns currently set
+  // to Skip. Never overrides user's explicit choices. Idempotent.
+  const handleAutoDetect = () => {
+    setMapping((prev) => {
+      const next = { ...prev };
+      let matchCount = 0;
+      for (const col of parsed.headers) {
+        const current = next[col] || "";
+        if (current && current !== "") continue; // Skip (or user-picked non-empty): leave alone
+        const detected = autoDetectMapping(col);
+        if (detected) {
+          next[col] = detected;
+          matchCount++;
+        }
+      }
+      console.log(`[auto-detect] matched ${matchCount} columns`);
+      return next;
+    });
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -483,20 +543,45 @@ export function ImportDialog({ onClose, onImported }: Props) {
               </div>
 
               <div>
-                <h3 className="mb-2 text-sm font-medium text-zinc-300">Map CSV columns to contact fields:</h3>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-medium text-zinc-300">Map CSV columns to contact fields:</h3>
+                  <button
+                    type="button"
+                    onClick={handleAutoDetect}
+                    className="text-xs text-indigo-400 hover:text-indigo-300 underline underline-offset-2"
+                    title="Fill in mappings for columns currently set to Skip. Your existing choices won't change."
+                  >
+                    Auto-detect mappings
+                  </button>
+                </div>
                 <div className="space-y-2">
                   {parsed.headers.map((header) => {
                     const mapped = mapping[header] || "";
                     const isCustom = mapped === "__custom__";
                     const isStatus = mapped === "status";
                     const isTagEach = mapped === "__tag_each__";
+                    const isTagsSemi = mapped === "tags";
                     // Column values — pre-sliced for the preview components.
                     const columnValues = parsed.rows.map((r) => r[header] ?? "");
+                    const firstRowValue = parsed.rows[0]?.[header];
+                    const sampleText = formatSamplePreview(firstRowValue);
+                    // Slug prefix mirrors columnValueToTagName's header normalization;
+                    // kept inline so the Tag-each helper text example stays live.
+                    const slugPrefix = header
+                      .toLowerCase()
+                      .replace(/[^a-z0-9]+/g, "")
+                      .replace(/(name|type|category)$/, "");
                     return (
                       <div key={header} className="space-y-1">
                         <div className="flex items-center gap-3">
-                          <span className="w-40 truncate text-sm text-zinc-400">{header}</span>
-                          <span className="text-zinc-600">→</span>
+                          <span className="w-36 truncate text-sm text-zinc-300 shrink-0 font-mono">{header}</span>
+                          <span
+                            className="w-32 truncate text-xs text-zinc-500 font-mono shrink-0"
+                            title={String(firstRowValue ?? "")}
+                          >
+                            {sampleText}
+                          </span>
+                          <span className="text-zinc-600 shrink-0">→</span>
                           <select value={mapped} onChange={(e) => setMapping({ ...mapping, [header]: e.target.value })}
                             className={`h-8 rounded-lg border border-zinc-700 bg-zinc-800 px-2 text-sm text-white focus:border-indigo-500 focus:outline-none ${isCustom ? "flex-none w-44" : "flex-1"}`}>
                             {contactFields.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
@@ -509,6 +594,23 @@ export function ImportDialog({ onClose, onImported }: Props) {
                             />
                           )}
                         </div>
+                        {/* Stage 1.6.2 Fix A — inline helper text per option type */}
+                        {isTagsSemi && (
+                          <p className="ml-36 pl-3 text-xs text-zinc-500">
+                            CSV value like <code className="text-zinc-400">vip;referred</code> creates both tags on each contact.
+                          </p>
+                        )}
+                        {isTagEach && (
+                          <p className="ml-36 pl-3 text-xs text-zinc-500">
+                            Each unique value becomes its own tag, prefixed with the column name
+                            (e.g. <code className="text-zinc-400">CI-A1</code> → <code className="text-zinc-400">{slugPrefix || "col"}-ci-a1</code>).
+                          </p>
+                        )}
+                        {isCustom && (
+                          <p className="ml-36 pl-3 text-xs text-zinc-500">
+                            Stored as metadata. Visible on the contact detail page but not filterable by campaigns (use a tag for that).
+                          </p>
+                        )}
                         {isStatus && <StatusColumnPreview cellValues={columnValues} />}
                         {isTagEach && <TagEachValuePreview columnHeader={header} cellValues={columnValues} />}
                       </div>
