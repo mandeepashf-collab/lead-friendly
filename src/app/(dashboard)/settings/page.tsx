@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Settings, Building2, Users, Key, Bell, Shield, ShieldCheck, Save, Eye, EyeOff, Zap, Plus, X, Loader2, ToggleLeft, ToggleRight, MessageSquare, Mail, Phone, Calendar, AlertCircle, Tag, Trash2 } from "lucide-react";
+import { Settings, Building2, Users, Key, Bell, Shield, ShieldCheck, Save, Eye, EyeOff, Zap, Plus, X, Loader2, ToggleLeft, ToggleRight, MessageSquare, Mail, Phone, Calendar, AlertCircle, Tag, Trash2, Palette } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -682,6 +682,13 @@ export default function SettingsPage() {
             className="flex items-center gap-2 px-4 pb-3 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap flex-shrink-0 border-transparent text-zinc-500 hover:text-zinc-300"
           >
             <ShieldCheck className="h-4 w-4" />Compliance
+          </Link>
+          {/* Branding also lives on its own route (/settings/branding) — owners/admins only. */}
+          <Link
+            href="/settings/branding"
+            className="flex items-center gap-2 px-4 pb-3 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap flex-shrink-0 border-transparent text-zinc-500 hover:text-zinc-300"
+          >
+            <Palette className="h-4 w-4" />Branding
           </Link>
         </div>
       </div>
