@@ -1,9 +1,12 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { X, Upload, FileSpreadsheet, Check, AlertCircle, Loader2, Download } from "lucide-react";
 import { bulkImportContacts } from "@/hooks/use-contacts";
 import { bulkAddContactTags } from "@/hooks/use-contact-tags";
+import { columnValueToTagName, previewTagsForColumn } from "@/lib/import/tagNaming";
+import { resolveStatusOrNull } from "@/lib/import/statusAliases";
+import { createClient } from "@/lib/supabase/client";
 
 interface Props {
   onClose: () => void;
@@ -15,6 +18,7 @@ interface ParsedRow {
   last_name?: string;
   email?: string;
   phone?: string;
+  cell_phone?: string;
   company_name?: string;
   job_title?: string;
   address_line1?: string;
@@ -110,6 +114,148 @@ const slugifyKey = (raw: string) =>
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
 
+// ─── Inline preview sub-components (Stage 1.6) ──────────────────────────
+
+/**
+ * Shows a count of unique values in a Status column and whether each maps
+ * cleanly to the contacts status enum or will fall back to "new" + tag.
+ */
+function StatusColumnPreview({ cellValues }: { cellValues: string[] }) {
+  const counts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const v of cellValues) {
+      const key = v?.trim() ?? "";
+      if (!key) continue;
+      m.set(key, (m.get(key) ?? 0) + 1);
+    }
+    return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
+  }, [cellValues]);
+
+  const displayed = counts.slice(0, 20);
+  const more = Math.max(0, counts.length - 20);
+
+  return (
+    <div className="ml-48 rounded border border-zinc-800 bg-zinc-950/60 p-3 text-xs">
+      <div className="font-medium text-zinc-300 mb-2">
+        Status column preview ({counts.length} unique value{counts.length === 1 ? "" : "s"})
+      </div>
+      <ul className="space-y-1">
+        {displayed.map(([raw, n]) => {
+          const mapped = resolveStatusOrNull(raw);
+          return (
+            <li key={raw} className="flex items-center gap-2">
+              <span className="font-mono text-zinc-100">&quot;{raw}&quot;</span>
+              <span className="text-zinc-600">→</span>
+              {mapped === null ? (
+                <span className="text-amber-400">⚠ unmapped (will default to &quot;new&quot; + status-tag)</span>
+              ) : (
+                <span className="text-zinc-400">{mapped}</span>
+              )}
+              <span className="ml-auto text-zinc-500">({n} row{n === 1 ? "" : "s"})</span>
+            </li>
+          );
+        })}
+      </ul>
+      {more > 0 && <div className="mt-1 text-zinc-500">+{more} more value{more === 1 ? "" : "s"}</div>}
+    </div>
+  );
+}
+
+/**
+ * Shows the first 5 unique tag names that a "Tag each value" column would
+ * generate, namespaced by column header.
+ */
+function TagEachValuePreview({ columnHeader, cellValues }: { columnHeader: string; cellValues: string[] }) {
+  const tags = useMemo(
+    () => previewTagsForColumn(columnHeader, cellValues),
+    [columnHeader, cellValues],
+  );
+  const shown = tags.slice(0, 5);
+  const more = Math.max(0, tags.length - 5);
+  return (
+    <div className="ml-48 rounded border border-zinc-800 bg-zinc-950/60 p-3 text-xs">
+      <div className="font-medium text-zinc-300 mb-2">
+        Will create {tags.length} tag{tags.length === 1 ? "" : "s"}
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {shown.map((t) => (
+          <span key={t} className="rounded bg-zinc-900 border border-zinc-700 px-2 py-0.5 font-mono text-zinc-300">
+            {t}
+          </span>
+        ))}
+        {more > 0 && <span className="text-zinc-500">+{more} more</span>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Input for the Custom Field key name, with autocomplete suggestions pulled
+ * from get_org_custom_field_keys RPC (migration 020). Falls back to a plain
+ * input if the RPC is unavailable or the org has no existing custom keys.
+ */
+function CustomFieldKeyInput({
+  organizationId, value, onChange,
+}: {
+  organizationId: string | null;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [suggestions, setSuggestions] = useState<Array<{ key: string; usage_count: number }>>([]);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!organizationId) return;
+    let cancelled = false;
+    (async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase.rpc("get_org_custom_field_keys", {
+        p_organization_id: organizationId,
+      });
+      if (!cancelled && !error && data) {
+        setSuggestions(data as Array<{ key: string; usage_count: number }>);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [organizationId]);
+
+  const filtered = useMemo(() => {
+    const q = value.toLowerCase().trim();
+    if (!q) return suggestions.slice(0, 10);
+    return suggestions.filter((s) => s.key.toLowerCase().includes(q)).slice(0, 10);
+  }, [value, suggestions]);
+
+  return (
+    <div className="relative flex-1">
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder="field_name (e.g. loan_amount)"
+        className="h-8 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-2 text-sm text-zinc-300 placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none"
+      />
+      {open && filtered.length > 0 && (
+        <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-48 overflow-auto rounded-md border border-zinc-700 bg-zinc-900 shadow-xl">
+          {filtered.map((s) => (
+            <li key={s.key}>
+              <button
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); onChange(s.key); setOpen(false); }}
+                className="flex w-full justify-between px-3 py-1.5 text-left text-sm text-zinc-300 hover:bg-zinc-800"
+              >
+                <span className="font-mono">{s.key}</span>
+                <span className="text-xs text-zinc-500">{s.usage_count} contact{s.usage_count === 1 ? "" : "s"}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 const FIELD_MAP: Record<string, string> = {
   first_name: "first_name", firstname: "first_name", "first name": "first_name",
   last_name: "last_name", lastname: "last_name", "last name": "last_name",
@@ -135,7 +281,26 @@ export function ImportDialog({ onClose, onImported }: Props) {
   // user-typed key name that the value will land under in custom_fields.
   const [customKeys, setCustomKeys] = useState<Record<string, string>>({});
   const [importResult, setImportResult] = useState({ count: 0, skipped: 0, error: "" });
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Load the user's org once so the Custom Field autocomplete can query the
+  // get_org_custom_field_keys RPC (migration 020). If the RPC is unavailable
+  // or the user has no org, the autocomplete silently shows zero suggestions.
+  useEffect(() => {
+    const supabase = createClient();
+    let cancelled = false;
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: profile } = await supabase
+        .from("profiles").select("organization_id").eq("id", user.id).single();
+      if (!cancelled && profile?.organization_id) {
+        setOrganizationId(profile.organization_id as string);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const handleFile = (file: File) => {
     setFileName(file.name);
@@ -185,13 +350,25 @@ export function ImportDialog({ onClose, onImported }: Props) {
 
     for (const row of parsed.rows) {
       const contact: Record<string, unknown> = {};
-      let rowTags: string[] = [];
+      const rowTags: string[] = [];
       const rowCustom: Record<string, string> = {};
       Object.entries(mapping).forEach(([csvCol, dbField]) => {
         if (dbField === "tags") {
-          rowTags = row[csvCol]?.split(";").map((t) => t.trim()).filter(Boolean) || [];
+          // Semicolon-separated tag column
+          const parsedTags = row[csvCol]?.split(";").map((t) => t.trim()).filter(Boolean) || [];
+          for (const t of parsedTags) rowTags.push(t);
+        } else if (dbField === "__tag_each__") {
+          // Stage 1.6: each distinct cell value becomes its own tag,
+          // namespaced by column header (e.g. LeadLevel="CI-A" → "leadlevel-ci-a").
+          const tagName = columnValueToTagName(csvCol, row[csvCol] ?? "");
+          if (tagName) rowTags.push(tagName);
         } else if (dbField === "__custom__") {
           // Handled in customCols loop below
+        } else if (dbField === "cell_phone") {
+          // Stage 1.6: dedicated column, not custom_fields. Uses the same
+          // digits-only normalization as `phone` via bulkImportContacts.
+          // TODO: proper E.164 normalization is a separate cleanup (tracked for Stage X).
+          contact.cell_phone = row[csvCol] || undefined;
         } else {
           contact[dbField] = row[csvCol] || undefined;
         }
@@ -253,6 +430,8 @@ export function ImportDialog({ onClose, onImported }: Props) {
     { value: "source", label: "Source" },
     { value: "status", label: "Status" },
     { value: "tags", label: "Tags (semicolon-separated)" },
+    { value: "cell_phone", label: "Cell Phone" },
+    { value: "__tag_each__", label: "Tag each value" },
     { value: "__custom__", label: "Custom Field" },
   ];
 
@@ -309,22 +488,29 @@ export function ImportDialog({ onClose, onImported }: Props) {
                   {parsed.headers.map((header) => {
                     const mapped = mapping[header] || "";
                     const isCustom = mapped === "__custom__";
+                    const isStatus = mapped === "status";
+                    const isTagEach = mapped === "__tag_each__";
+                    // Column values — pre-sliced for the preview components.
+                    const columnValues = parsed.rows.map((r) => r[header] ?? "");
                     return (
-                      <div key={header} className="flex items-center gap-3">
-                        <span className="w-40 truncate text-sm text-zinc-400">{header}</span>
-                        <span className="text-zinc-600">→</span>
-                        <select value={mapped} onChange={(e) => setMapping({ ...mapping, [header]: e.target.value })}
-                          className={`h-8 rounded-lg border border-zinc-700 bg-zinc-800 px-2 text-sm text-white focus:border-indigo-500 focus:outline-none ${isCustom ? "flex-none w-44" : "flex-1"}`}>
-                          {contactFields.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-                        </select>
-                        {isCustom && (
-                          <input
-                            value={customKeys[header] || ""}
-                            onChange={(e) => setCustomKeys({ ...customKeys, [header]: e.target.value })}
-                            placeholder="field_name (e.g. loan_amount)"
-                            className="h-8 flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-2 text-sm text-zinc-300 placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none"
-                          />
-                        )}
+                      <div key={header} className="space-y-1">
+                        <div className="flex items-center gap-3">
+                          <span className="w-40 truncate text-sm text-zinc-400">{header}</span>
+                          <span className="text-zinc-600">→</span>
+                          <select value={mapped} onChange={(e) => setMapping({ ...mapping, [header]: e.target.value })}
+                            className={`h-8 rounded-lg border border-zinc-700 bg-zinc-800 px-2 text-sm text-white focus:border-indigo-500 focus:outline-none ${isCustom ? "flex-none w-44" : "flex-1"}`}>
+                            {contactFields.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                          </select>
+                          {isCustom && (
+                            <CustomFieldKeyInput
+                              organizationId={organizationId}
+                              value={customKeys[header] || ""}
+                              onChange={(v) => setCustomKeys({ ...customKeys, [header]: v })}
+                            />
+                          )}
+                        </div>
+                        {isStatus && <StatusColumnPreview cellValues={columnValues} />}
+                        {isTagEach && <TagEachValuePreview columnHeader={header} cellValues={columnValues} />}
                       </div>
                     );
                   })}
