@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Settings, Building2, Users, Key, Bell, Shield, Save, Eye, EyeOff, Zap, Plus, X, Loader2, ToggleLeft, ToggleRight, MessageSquare, Mail, Phone, Calendar, AlertCircle, Tag, Trash2 } from "lucide-react";
+import { Settings, Building2, Users, Key, Bell, Shield, ShieldCheck, Save, Eye, EyeOff, Zap, Plus, X, Loader2, ToggleLeft, ToggleRight, MessageSquare, Mail, Phone, Calendar, AlertCircle, Tag, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useBrand } from "@/contexts/BrandContext";
@@ -673,6 +674,15 @@ export default function SettingsPage() {
               </button>
             );
           })}
+          {/* Compliance lives on its own route (/settings/compliance) so the
+              tab links out rather than switching an inline panel. Matches how
+              Branding and Billing are reached elsewhere in the app. */}
+          <Link
+            href="/settings/compliance"
+            className="flex items-center gap-2 px-4 pb-3 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap flex-shrink-0 border-transparent text-zinc-500 hover:text-zinc-300"
+          >
+            <ShieldCheck className="h-4 w-4" />Compliance
+          </Link>
         </div>
       </div>
 
