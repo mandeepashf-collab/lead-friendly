@@ -226,7 +226,12 @@ function CustomFieldKeyInput({
   }, [value, suggestions]);
 
   return (
-    <div className="relative flex-1">
+    // Stage 1.6.3 Fix 2: explicit h-8 on the relative container prevents its
+    // height from collapsing when the input is flexed, which would otherwise
+    // pull `top-full` above the input's visible bottom. max-h-40 (was 48)
+    // shrinks the dropdown so it's less likely to be clipped by the modal's
+    // own overflow-y-auto boundary.
+    <div className="relative flex-1 h-8">
       <input
         type="text"
         value={value}
@@ -237,7 +242,10 @@ function CustomFieldKeyInput({
         className="h-8 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-2 text-sm text-zinc-300 placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none"
       />
       {open && filtered.length > 0 && (
-        <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-48 overflow-auto rounded-md border border-zinc-700 bg-zinc-900 shadow-xl">
+        <ul
+          role="listbox"
+          className="absolute left-0 right-0 top-full z-30 mt-1 max-h-40 overflow-y-auto rounded-md border border-zinc-700 bg-zinc-900 shadow-xl"
+        >
           {filtered.map((s) => (
             <li key={s.key}>
               <button
@@ -594,7 +602,12 @@ export function ImportDialog({ onClose, onImported }: Props) {
                             />
                           )}
                         </div>
-                        {/* Stage 1.6.2 Fix A — inline helper text per option type */}
+                        {/* Stage 1.6.2 Fix A + 1.6.3 Fix 3B — inline helper text per option type */}
+                        {isStatus && (
+                          <p className="ml-36 pl-3 text-xs text-zinc-500">
+                            Updates the contact&apos;s pipeline stage (used by filters and status chips). See Status Column Preview below.
+                          </p>
+                        )}
                         {isTagsSemi && (
                           <p className="ml-36 pl-3 text-xs text-zinc-500">
                             CSV value like <code className="text-zinc-400">vip;referred</code> creates both tags on each contact.
