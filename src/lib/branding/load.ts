@@ -49,5 +49,5 @@ export const loadOrgBrand = (orgId: string): Promise<OrgBrand> =>
 
 /** Call this from PATCH handlers to force an immediate cache refresh. */
 export function invalidateOrgBrand(orgId: string) {
-  revalidateTag(BRAND_CACHE_TAG(orgId))
+  revalidateTag(BRAND_CACHE_TAG(orgId), 'max')
 }

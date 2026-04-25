@@ -82,5 +82,5 @@ export const resolveOrgByHostname = (host: string): Promise<ResolvedOrg | null> 
 
 /** Invalidate after domain verification or deletion. */
 export function invalidateHostResolution(host: string) {
-  revalidateTag(HOST_CACHE_TAG(host))
+  revalidateTag(HOST_CACHE_TAG(host), 'max')
 }
