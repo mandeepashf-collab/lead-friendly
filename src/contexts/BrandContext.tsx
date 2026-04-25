@@ -5,24 +5,32 @@ import { createClient } from '@/lib/supabase/client'
 import { DEFAULT_BRAND, type OrgBrand } from '@/lib/schemas/stage3'
 
 // ────────────────────────────────────────────────────────────────────────────
-// Stage 3.2 — Brand context
+// Stage 3.2/3.3 — Brand context
 // ────────────────────────────────────────────────────────────────────────────
 // Source-of-truth flow:
-//   1. Server layout loads brand from `organizations` and injects
-//        <script>window.__LF_BRAND__ = { ... }</script>
-//      BrandProvider hydrates from this on first render — no fetch, no FOUC.
-//   2. If window.__LF_BRAND__ is absent (legacy page, shared component tree),
-//      BrandProvider falls back to /api/org/[id]/brand using the session's
+//   1. Middleware sees a custom domain OR an active impersonation session and
+//      sets request headers (x-lf-org-id / x-lf-acting-as-org-id etc.)
+//   2. Root layout (Server Component) reads those headers and injects
+//        <script>
+//          window.__LF_BRAND__ = { ...OrgBrand };
+//          window.__LF_IMPERSONATION__ = { ...impersonationContext } | undefined;
+//        </script>
+//      BrandProvider hydrates from these on first render — no fetch, no FOUC.
+//   3. If __LF_BRAND__ is absent (legacy page tree, shared component), the
+//      provider falls back to /api/org/[id]/brand using the session's
 //      organization_id from profiles.
-//   3. Impersonation path (agency viewing a sub-account) is preserved as a
-//      top-priority override — if the impersonation cookies are present,
-//      we read sub_accounts and use that brand instead.
 //
-// The exported shape is a SUPERSET of the old interface:
-//   - Legacy fields (brandName/brandColor/brandLogo/isWhiteLabel/
-//     isImpersonating/impersonatingSubAccountId) preserved for existing
-//     consumers in ImpersonationBanner, AccountSwitcher, dashboard/settings.
-//   - `full` exposes the Stage 3.2 OrgBrand for new consumers.
+// Stage 3.3 change vs. Stage 3.2:
+//   - Old: BrandContext read non-httpOnly cookies and queried sub_accounts
+//     directly. Both broke when Stage 3.1 dropped sub_accounts.
+//   - New: cookie is httpOnly (JS can't see it). Impersonation state arrives
+//     as a server-injected window.__LF_IMPERSONATION__ payload, populated by
+//     middleware → root layout. The brand swap to the sub-account's identity
+//     is also done server-side in the layout, so we don't need a separate
+//     client-side fetch for it.
+//
+// The exported BrandContext shape is unchanged for backwards compat with
+// ImpersonationBanner, AccountSwitcher, and dashboard/settings consumers.
 // ────────────────────────────────────────────────────────────────────────────
 
 interface BrandConfig {
@@ -51,16 +59,25 @@ const defaultBrand: BrandConfig = {
 
 const BrandContext = createContext<BrandConfig>(defaultBrand)
 
+interface ImpersonationHydration {
+  subOrganizationId: string
+  subOrgName: string | null
+  actorUserId: string
+  actorEmail: string | null
+  expiresAt: string | null
+}
+
 declare global {
   interface Window {
     __LF_BRAND__?: OrgBrand
     __LF_ORG_ID__?: string
+    __LF_IMPERSONATION__?: ImpersonationHydration
   }
 }
 
 function orgBrandToLegacy(
   brand: OrgBrand,
-  impersonation?: { subId: string },
+  impersonation?: ImpersonationHydration | null,
 ): Omit<BrandConfig, 'refresh'> {
   return {
     brandName: brand.portalName,
@@ -68,16 +85,20 @@ function orgBrandToLegacy(
     brandLogo: brand.primaryLogoUrl,
     isWhiteLabel: brand.isWhiteLabeled,
     isImpersonating: Boolean(impersonation),
-    impersonatingSubAccountId: impersonation?.subId ?? null,
+    impersonatingSubAccountId: impersonation?.subOrganizationId ?? null,
     full: brand,
   }
 }
 
 export function BrandProvider({ children }: { children: React.ReactNode }) {
-  // Hydration-safe initial state.
+  // Hydration-safe initial state. Read both __LF_BRAND__ and __LF_IMPERSONATION__
+  // synchronously so the first paint already shows the right identity.
   const [brand, setBrand] = useState<BrandConfig>(() => {
     if (typeof window !== 'undefined' && window.__LF_BRAND__) {
-      return { ...orgBrandToLegacy(window.__LF_BRAND__), refresh: () => {} }
+      return {
+        ...orgBrandToLegacy(window.__LF_BRAND__, window.__LF_IMPERSONATION__),
+        refresh: () => {},
+      }
     }
     return defaultBrand
   })
@@ -89,42 +110,22 @@ export function BrandProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false
 
     async function loadBrand() {
-      const supabase = createClient()
-
-      // ── Impersonation override (highest priority) ─────────────────────
-      const token = document.cookie.match(/impersonation_token=([^;]+)/)?.[1]
-      const subId = document.cookie.match(/impersonation_sub_account=([^;]+)/)?.[1]
-
-      if (token && subId) {
-        const { data: sub } = await supabase
-          .from('sub_accounts')
-          .select('company_name, primary_color, logo_url')
-          .eq('id', subId)
-          .single()
-
-        if (!cancelled && sub) {
-          const impersonationBrand: OrgBrand = {
-            ...DEFAULT_BRAND,
-            portalName: sub.company_name || 'Client Portal',
-            primaryColor: sub.primary_color || DEFAULT_BRAND.primaryColor,
-            primaryLogoUrl: sub.logo_url || null,
-            isWhiteLabeled: true,
-          }
-          setBrand({
-            ...orgBrandToLegacy(impersonationBrand, { subId }),
-            refresh,
-          })
-          return
-        }
-      }
-
-      // ── Normal path: server-hydrated or fetched ───────────────────────
+      // ── Server-hydrated path (the common case) ──────────────────────────
+      // Root layout already resolved the brand (own org, custom-domain org,
+      // or impersonated sub-org) and injected window.__LF_BRAND__. Use it.
       if (window.__LF_BRAND__) {
-        setBrand({ ...orgBrandToLegacy(window.__LF_BRAND__), refresh })
+        setBrand({
+          ...orgBrandToLegacy(window.__LF_BRAND__, window.__LF_IMPERSONATION__),
+          refresh,
+        })
         return
       }
 
-      // Fallback: no hydration payload. Look up the session's org and fetch.
+      // ── Fallback: no hydration payload ──────────────────────────────────
+      // Look up the session's org and fetch /api/org/[id]/brand directly.
+      // This path is only hit on legacy entry points or if hydration was
+      // disabled for some reason.
+      const supabase = createClient()
       const { data: sessionData } = await supabase.auth.getUser()
       const userId = sessionData.user?.id
       if (!userId) {

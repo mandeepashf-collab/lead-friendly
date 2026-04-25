@@ -154,3 +154,84 @@ function isValidDomainStatus(
 ): s is OrgBrand['domainStatus'] {
   return s === 'not_configured' || s === 'dns_pending' || s === 'verified' || s === 'error'
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// Stage 3.3 — Sub-account provisioning + impersonation
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── Plans (legacy + Cowork's spec; UI shows whichever is selected) ──────────
+export const SUB_ACCOUNT_PLANS = ['starter', 'growth', 'pro'] as const
+export type SubAccountPlan = (typeof SUB_ACCOUNT_PLANS)[number]
+
+// ── CreateSubAccount form payload ───────────────────────────────────────────
+// Matches the create_sub_account RPC signature plus a UI-only `inviteEmail`
+// flag (route handler will send a Supabase magic-link invite when true).
+export const CreateSubAccountInputSchema = z.object({
+  name: z.string().min(1, 'Client name is required').max(120),
+  adminEmail: z.string().email().nullable().optional(),
+  plan: z.enum(SUB_ACCOUNT_PLANS).default('starter'),
+  agencyBilledAmount: z.number().nonnegative().nullable().optional(),
+  aiMinutesLimit: z.number().int().positive().nullable().optional(),
+  snapshotId: z.string().uuid().nullable().optional(),
+  sendInvite: z.boolean().default(true),
+})
+export type CreateSubAccountInput = z.infer<typeof CreateSubAccountInputSchema>
+
+// ── ImpersonationContext: shape returned by get_active_impersonation RPC ────
+export interface ImpersonationContext {
+  sessionId: string
+  parentOrganizationId: string  // the agency org
+  subOrganizationId: string     // the org being viewed
+  actorUserId: string           // which agency admin
+  expiresAt: string             // ISO timestamp
+  subOrgName: string
+  actorEmail: string | null
+}
+
+// ── AgencyClient: row shape from agency_clients_v ───────────────────────────
+// Use this for the /agency/dashboard + /agency/clients table rendering.
+// snake_case to match Supabase return shape (no remapping needed for SELECT).
+export interface AgencyClientRow {
+  organization_id: string
+  name: string
+  parent_organization_id: string
+  plan: string | null
+  agency_billed_amount: number | null
+  ai_minutes_limit: number | null
+  ai_minutes_used: number | null
+  minutes_utilization: number | null
+  minutes_overage: number | null
+  is_active: boolean
+  custom_domain: string | null
+  domain_status: string | null
+  hide_platform_branding: boolean | null
+  created_at: string
+  updated_at: string
+  last_call_at: string | null
+  calls_this_month: number
+  calls_today: number
+  contact_count: number
+  agent_count: number
+  is_being_impersonated: boolean
+}
+
+// ── AgencyMrrSummary: row shape from agency_mrr_summary_v ───────────────────
+export interface AgencyMrrSummary {
+  agency_organization_id: string
+  agency_name: string
+  total_sub_accounts: number
+  active_sub_accounts: number
+  suspended_sub_accounts: number
+  total_mrr: number
+  total_minutes_allotted: number
+  total_minutes_used: number
+  total_minutes_overage: number
+  calls_this_month: number
+}
+
+// ── Cookie name (single source of truth) ────────────────────────────────────
+// Stage 3.3 uses one httpOnly cookie. The token resolves the entire context
+// via the get_active_impersonation RPC, so no second cookie is needed.
+export const IMPERSONATION_COOKIE_NAME = 'lf_impersonation_token'
+export const IMPERSONATION_DEFAULT_TTL_SECONDS = 15 * 60  // 15 min
+export const IMPERSONATION_MAX_TTL_SECONDS = 60 * 60      // 60 min (RPC enforces)

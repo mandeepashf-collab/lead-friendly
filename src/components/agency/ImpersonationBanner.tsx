@@ -1,26 +1,36 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import { Eye, ArrowLeft } from 'lucide-react'
 import { useBrand } from '@/contexts/BrandContext'
 
-// ── ImpersonationBanner ───────────────────────────────────────
-// Shown at the top of every page when an agency is viewing
-// the platform as one of their clients.
-// Reads brand context to show client name dynamically.
+// ── ImpersonationBanner ───────────────────────────────────────────────────
+// Stage 3.3 — Shown at the top of every page when an agency admin is viewing
+// the platform as one of their sub-accounts.
+//
+// Reads brand context (which now reads window.__LF_IMPERSONATION__ injected
+// by the root layout, which itself reads middleware-set headers backed by
+// the lf_impersonation_token httpOnly cookie).
+//
+// "Exit" calls DELETE /api/agency/impersonate, which:
+//   - calls end_impersonation RPC (writes audit log)
+//   - clears lf_impersonation_token cookie (and the legacy ones, defensively)
+// Then a full-page reload picks up the agency's own brand again.
 
 export function ImpersonationBanner() {
-  const router = useRouter()
   const brand = useBrand()
 
   if (!brand.isImpersonating) return null
 
   async function endImpersonation() {
-    await fetch('/api/agency/impersonate', { method: 'DELETE' })
-    // Clear cookies client-side
-    document.cookie = 'impersonation_token=;path=/;max-age=0'
-    document.cookie = 'impersonation_sub_account=;path=/;max-age=0'
-    window.location.href = '/dashboard'
+    try {
+      await fetch('/api/agency/impersonate', { method: 'DELETE' })
+    } catch (e) {
+      // The RPC is idempotent; even if the request failed, the cookie clear
+      // happens server-side via Set-Cookie. We log and continue with reload.
+      console.warn('Failed to end impersonation gracefully:', e)
+    }
+    // Full reload so the server layout re-renders with the agency's brand.
+    window.location.href = '/agency/dashboard'
   }
 
   return (
@@ -32,14 +42,14 @@ export function ImpersonationBanner() {
             Viewing as {brand.brandName}
           </span>
           <span className="text-xs opacity-70">
-            — all actions affect this account
+            — read-only session, expires soon
           </span>
         </div>
         <button
           onClick={endImpersonation}
           className="flex items-center gap-1.5 px-3 py-1 bg-amber-950/20 hover:bg-amber-950/30 rounded-lg text-sm font-medium transition-colors">
           <ArrowLeft size={14} />
-          Back to Lead Friendly
+          Back to your agency
         </button>
       </div>
     </div>

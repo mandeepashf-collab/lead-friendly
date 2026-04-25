@@ -1,121 +1,169 @@
-import { createClient } from '@supabase/supabase-js'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { z } from 'zod'
+import {
+  IMPERSONATION_COOKIE_NAME,
+  IMPERSONATION_DEFAULT_TTL_SECONDS,
+  IMPERSONATION_MAX_TTL_SECONDS,
+} from '@/lib/schemas/stage3'
 
-// POST /api/agency/impersonate
-// Agency clicks "Switch to account" on a sub-account card
-// Creates a 2-hour impersonation token, stored in cookie
-// All subsequent requests scoped to that sub-account
+// ────────────────────────────────────────────────────────────────────────────
+// Stage 3.3 — POST/DELETE /api/agency/impersonate
+// ────────────────────────────────────────────────────────────────────────────
+// POST   → start_impersonation RPC, set httpOnly lf_impersonation_token cookie
+// DELETE → end_impersonation RPC, clear cookie
+//
+// Cookie semantics (per spec):
+//   - name: lf_impersonation_token (single-cookie design; the token resolves
+//     the entire context server-side via get_active_impersonation)
+//   - httpOnly: true (server-only — JS can't read or set it)
+//   - secure: true in prod, false in dev
+//   - sameSite: 'lax'
+//   - maxAge: 15 min default, 60 min max
+//   - path: '/'
+//
+// The pre-Stage-3.1 version used a non-httpOnly cookie named impersonation_token
+// + a redundant impersonation_sub_account cookie, with 2h TTL. Both are
+// replaced here. Any client code still setting the old cookie name will be
+// silently ignored by middleware after this ships.
+// ────────────────────────────────────────────────────────────────────────────
+
+const StartInputSchema = z.object({
+  // Accept either spec-form (sub_organization_id) or legacy form
+  // (sub_account_id) for backwards-compat with existing callers we'll
+  // migrate in a later pass. Both are uuids referencing organizations.id.
+  sub_organization_id: z.string().uuid().optional(),
+  sub_account_id: z.string().uuid().optional(),
+  duration_minutes: z.number().int().positive().optional(),
+})
 
 export async function POST(request: NextRequest) {
-  try {
-    // Use SSR client to read the user's auth session from cookies
-    const cookieStore = await cookies()
-    const authClient = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll()
-          },
-          setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
-          },
-        },
-      }
-    )
-
-    const { data: { user } } = await authClient.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    // Use service role client for DB operations
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-
-    const { sub_account_id } = await request.json()
-    if (!sub_account_id) return NextResponse.json({ error: 'sub_account_id required' }, { status: 400 })
-
-    // Verify this sub-account belongs to the agency
-    const { data: agency } = await supabase
-      .from('agencies').select('id').eq('user_id', user.id).single()
-
-    if (!agency) return NextResponse.json({ error: 'No agency account' }, { status: 403 })
-
-    const { data: sub } = await supabase
-      .from('sub_accounts').select('id, name, company_name, status')
-      .eq('id', sub_account_id).eq('agency_id', agency.id).single()
-
-    if (!sub) return NextResponse.json({ error: 'Sub-account not found or not yours' }, { status: 404 })
-
-    // Create impersonation session
-    const { data: session, error } = await supabase
-      .from('impersonation_sessions')
-      .insert({
-        agency_id: agency.id,
-        sub_account_id: sub_account_id,
-      })
-      .select('token, expires_at')
-      .single()
-
-    if (error) throw error
-
-    // Set cookies in the response
-    const response = NextResponse.json({
-      token: session.token,
-      expires_at: session.expires_at,
-      sub_account: { id: sub.id, name: sub.company_name || sub.name }
-    })
-
-    const maxAge = 7200 // 2 hours
-    response.cookies.set('impersonation_token', session.token, {
-      path: '/',
-      maxAge,
-      sameSite: 'lax',
-    })
-    response.cookies.set('impersonation_sub_account', sub_account_id, {
-      path: '/',
-      maxAge,
-      sameSite: 'lax',
-    })
-
-    return response
-
-  } catch (err: any) {
-    console.error('Impersonation error:', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  // ── AuthN (the RPC also checks; double-check here for friendly 401) ──────
+  const supabase = await createClient()
+  const {
+    data: { user },
+    error: userErr,
+  } = await supabase.auth.getUser()
+  if (!user || userErr) {
+    return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
   }
+
+  // ── Parse input ──────────────────────────────────────────────────────────
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: 'invalid_json' }, { status: 400 })
+  }
+  const parsed = StartInputSchema.safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'validation_failed', details: parsed.error.flatten() },
+      { status: 400 },
+    )
+  }
+  const subOrgId = parsed.data.sub_organization_id ?? parsed.data.sub_account_id
+  if (!subOrgId) {
+    return NextResponse.json(
+      { error: 'sub_organization_id_required' },
+      { status: 400 },
+    )
+  }
+
+  // Clamp requested duration to [1, MAX] minutes (RPC also clamps)
+  const ttlSeconds = Math.min(
+    IMPERSONATION_MAX_TTL_SECONDS,
+    Math.max(60, (parsed.data.duration_minutes ?? 15) * 60),
+  )
+
+  // ── Capture client metadata for audit log ────────────────────────────────
+  const ipAddress =
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    request.headers.get('x-real-ip') ||
+    null
+  const userAgent = request.headers.get('user-agent') ?? null
+
+  // ── Call start_impersonation RPC ─────────────────────────────────────────
+  const { data: session, error: rpcError } = await supabase.rpc(
+    'start_impersonation',
+    {
+      p_sub_org_id: subOrgId,
+      p_ip_address: ipAddress,
+      p_user_agent: userAgent,
+      p_duration_minutes: Math.floor(ttlSeconds / 60),
+    },
+  )
+
+  if (rpcError) {
+    const status =
+      rpcError.code === '42501' ? 403
+      : rpcError.code === 'P0001' ? 400
+      : 500
+    return NextResponse.json({ error: rpcError.message }, { status })
+  }
+  if (!session) {
+    return NextResponse.json({ error: 'session_not_returned' }, { status: 500 })
+  }
+
+  // ── Build response with httpOnly cookie ──────────────────────────────────
+  const response = NextResponse.json({
+    success: true,
+    sessionId: session.id,
+    subOrganizationId: session.sub_organization_id,
+    expiresAt: session.expires_at,
+    // Token is intentionally NOT in the JSON body — it's only in the cookie.
+    // Clients that need to query state should hit a separate /api/impersonation/me
+    // endpoint (not built yet) instead of stashing the token in JS.
+  })
+
+  response.cookies.set(IMPERSONATION_COOKIE_NAME, session.token as string, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: IMPERSONATION_DEFAULT_TTL_SECONDS,
+    path: '/',
+  })
+
+  return response
 }
 
-// DELETE /api/agency/impersonate
-// End impersonation session - return to agency dashboard
-export async function DELETE(request: NextRequest) {
-  try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-    const cookieStore = await cookies()
-    const token = cookieStore.get('impersonation_token')?.value
+export async function DELETE(_request: NextRequest) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+    error: userErr,
+  } = await supabase.auth.getUser()
+  if (!user || userErr) {
+    return NextResponse.json({ error: 'unauthenticated' }, { status: 401 })
+  }
 
-    if (token) {
-      await supabase
-        .from('impersonation_sessions')
-        .update({ ended_at: new Date().toISOString() })
-        .eq('token', token)
-    }
+  // Read the new cookie name; tolerate the old one too during transition.
+  // (Old cookie won't validate against the RPC since it points at a stale
+  // session shape, but clearing it keeps stale browser state from sticking.)
+  const cookieJar = request_cookies(_request)
+  const newToken = cookieJar.get(IMPERSONATION_COOKIE_NAME)
+  const oldToken = cookieJar.get('impersonation_token')
+  const token = newToken ?? oldToken
 
-    const response = NextResponse.json({ success: true })
-    response.cookies.delete('impersonation_token')
-    response.cookies.delete('impersonation_sub_account')
-    return response
+  if (token) {
+    // RPC is idempotent — it returns false if the session is already ended
+    // or doesn't exist. We don't surface that as an error to the caller.
+    await supabase.rpc('end_impersonation', { p_token: token })
+  }
 
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  const response = NextResponse.json({ success: true })
+  // Clear both old and new cookie names atomically so users with stale state
+  // don't keep an unreadable cookie sitting around.
+  response.cookies.delete(IMPERSONATION_COOKIE_NAME)
+  response.cookies.delete('impersonation_token')
+  response.cookies.delete('impersonation_sub_account')
+  return response
+}
+
+// Tiny helper because Next 15 makes cookies() async outside route handlers
+// and we want a sync read of just the request cookies here.
+function request_cookies(req: NextRequest) {
+  return {
+    get: (name: string) => req.cookies.get(name)?.value,
   }
 }
