@@ -241,6 +241,48 @@ export async function middleware(request: NextRequest) {
   // Keep a session reference for downstream checks (subscription gate, etc.)
   const session = user ? { user } : null
 
+  // ── Role flags + /agency/* gate ────────────────────────────
+  // For authenticated users, derive whether they're an agency admin
+  // (top-level org owner/admin) or a sub-account user (their home org has a
+  // non-null parent_organization_id). The flags are injected into response
+  // headers so the root layout can pass them through to BrandContext for
+  // client-side gating.
+  //
+  // Non-agency-admin users hitting /agency/* get a 404 rewrite — the route
+  // should appear not to exist, not redirect them somewhere visible.
+  let isAgencyAdmin = false
+  let isSubAccount = false
+  if (session) {
+    const { data: userOrg } = await supabase
+      .from('profiles')
+      .select('role, organizations!inner(parent_organization_id)')
+      .eq('id', session.user.id)
+      .maybeSingle()
+
+    if (userOrg) {
+      // supabase-js can return the joined row as either an array or a single
+      // object depending on the relationship cardinality it infers. Defensive
+      // check covers both shapes.
+      const orgRow = (Array.isArray(userOrg.organizations)
+        ? userOrg.organizations[0]
+        : userOrg.organizations) as
+        | { parent_organization_id: string | null }
+        | null
+        | undefined
+
+      isAgencyAdmin =
+        ['owner', 'admin'].includes(((userOrg.role as string) ?? '')) &&
+        orgRow?.parent_organization_id == null
+      isSubAccount = !!orgRow && orgRow.parent_organization_id != null
+    }
+
+    if (pathname.startsWith('/agency/') && !isAgencyAdmin) {
+      return NextResponse.rewrite(new URL('/404', request.url))
+    }
+  }
+  res.headers.set('x-lf-user-is-agency-admin', isAgencyAdmin ? '1' : '0')
+  res.headers.set('x-lf-user-is-sub-account', isSubAccount ? '1' : '0')
+
   // ── Subscription gate (opt-in via SUBSCRIPTION_GATE_ENABLED) ────
   // Redirect users whose org has no active subscription to /billing so they
   // can start or fix their subscription. We skip:

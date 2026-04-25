@@ -40,6 +40,12 @@ interface BrandConfig {
   isWhiteLabel: boolean
   isImpersonating: boolean
   impersonatingSubAccountId: string | null
+  /** Sub-account display name during impersonation (used by the banner). */
+  impersonatingSubAccountName: string | null
+  /** Stage 3.3.1 — top-level org owner/admin (no parent_organization_id). */
+  isAgencyAdmin: boolean
+  /** Stage 3.3.1 — user's home org has a parent_organization_id. */
+  isSubAccount: boolean
 
   full: OrgBrand
   /** Manually re-fetch after a settings-page save. */
@@ -53,6 +59,9 @@ const defaultBrand: BrandConfig = {
   isWhiteLabel: false,
   isImpersonating: false,
   impersonatingSubAccountId: null,
+  impersonatingSubAccountName: null,
+  isAgencyAdmin: false,
+  isSubAccount: false,
   full: DEFAULT_BRAND,
   refresh: () => {},
 }
@@ -72,6 +81,7 @@ declare global {
     __LF_BRAND__?: OrgBrand
     __LF_ORG_ID__?: string
     __LF_IMPERSONATION__?: ImpersonationHydration
+    __LF_USER_ORG__?: { isAgencyAdmin: boolean; isSubAccount: boolean }
   }
 }
 
@@ -79,6 +89,12 @@ function orgBrandToLegacy(
   brand: OrgBrand,
   impersonation?: ImpersonationHydration | null,
 ): Omit<BrandConfig, 'refresh'> {
+  // Read role flags from the same hydration payload window the layout
+  // injects. Falls back to false on the server (typeof window check) and
+  // for legacy entry points without the payload.
+  const userOrg =
+    typeof window !== 'undefined' ? window.__LF_USER_ORG__ : undefined
+
   return {
     brandName: brand.portalName,
     brandColor: brand.primaryColor,
@@ -86,6 +102,9 @@ function orgBrandToLegacy(
     isWhiteLabel: brand.isWhiteLabeled,
     isImpersonating: Boolean(impersonation),
     impersonatingSubAccountId: impersonation?.subOrganizationId ?? null,
+    impersonatingSubAccountName: impersonation?.subOrgName ?? null,
+    isAgencyAdmin: userOrg?.isAgencyAdmin ?? false,
+    isSubAccount: userOrg?.isSubAccount ?? false,
     full: brand,
   }
 }

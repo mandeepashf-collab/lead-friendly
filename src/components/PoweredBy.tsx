@@ -17,6 +17,10 @@ interface PoweredByProps {
 export function PoweredBy({ className, inline = false }: PoweredByProps) {
   const brand = useBrand()
 
+  // Stage 3.3.1: sub-account users never see the platform attribution,
+  // regardless of the parent agency's hide_platform_branding toggle. This
+  // protects the agency's white-label experience for their clients.
+  if (brand.isSubAccount) return null
   if (brand.full.hidePlatformBranding) return null
   if (brand.full.portalName === 'Lead Friendly') return null
 

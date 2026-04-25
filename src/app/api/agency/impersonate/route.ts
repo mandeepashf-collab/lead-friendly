@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
   return response
 }
 
-export async function DELETE(_request: NextRequest) {
+export async function DELETE(request: NextRequest) {
   const supabase = await createClient()
   const {
     data: { user },
@@ -140,9 +140,8 @@ export async function DELETE(_request: NextRequest) {
   // Read the new cookie name; tolerate the old one too during transition.
   // (Old cookie won't validate against the RPC since it points at a stale
   // session shape, but clearing it keeps stale browser state from sticking.)
-  const cookieJar = request_cookies(_request)
-  const newToken = cookieJar.get(IMPERSONATION_COOKIE_NAME)
-  const oldToken = cookieJar.get('impersonation_token')
+  const newToken = request.cookies.get(IMPERSONATION_COOKIE_NAME)?.value
+  const oldToken = request.cookies.get('impersonation_token')?.value
   const token = newToken ?? oldToken
 
   if (token) {
@@ -158,12 +157,4 @@ export async function DELETE(_request: NextRequest) {
   response.cookies.delete('impersonation_token')
   response.cookies.delete('impersonation_sub_account')
   return response
-}
-
-// Tiny helper because Next 15 makes cookies() async outside route handlers
-// and we want a sync read of just the request cookies here.
-function request_cookies(req: NextRequest) {
-  return {
-    get: (name: string) => req.cookies.get(name)?.value,
-  }
 }

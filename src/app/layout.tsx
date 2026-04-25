@@ -49,6 +49,11 @@ export default async function RootLayout({
 
   const orgIdFromHost = hdrs.get("x-lf-org-id");
 
+  // Stage 3.3.1 — role flags from middleware. Drives sub-account visibility
+  // gating (sidebar agency nav, Branding tab, PoweredBy override).
+  const userIsAgencyAdmin = hdrs.get("x-lf-user-is-agency-admin") === "1";
+  const userIsSubAccount = hdrs.get("x-lf-user-is-sub-account") === "1";
+
   // Pick brand source. Impersonation wins over custom-domain.
   const effectiveOrgId = impersonationActive && actingAsOrgId
     ? actingAsOrgId
@@ -72,6 +77,11 @@ export default async function RootLayout({
       }
     : null;
 
+  const userOrgPayload = {
+    isAgencyAdmin: userIsAgencyAdmin,
+    isSubAccount: userIsSubAccount,
+  };
+
   const hydrationScript = [
     `window.__LF_BRAND__=${JSON.stringify(brand)};`,
     effectiveOrgId
@@ -80,6 +90,7 @@ export default async function RootLayout({
     impersonationPayload
       ? `window.__LF_IMPERSONATION__=${JSON.stringify(impersonationPayload)};`
       : "",
+    `window.__LF_USER_ORG__=${JSON.stringify(userOrgPayload)};`,
   ].join("");
 
   return (
