@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { AccountSwitcher } from '@/components/layout/AccountSwitcher'
 import { OrgLogo } from '@/components/OrgLogo'
+import { useBrand } from '@/contexts/BrandContext'
 import {
   LayoutDashboard,
   Rocket,
@@ -56,6 +57,7 @@ const agencyNav: NavItem[] = [
 export function Sidebar() {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
+  const { isAgencyAdmin } = useBrand()
 
   const isActive = (item: NavItem) => {
     if (item.matchPaths) {
@@ -124,66 +126,68 @@ export function Sidebar() {
           )
         })}
 
-        <div className="mt-6 pt-4 border-t border-zinc-800">
-          <div className="flex items-center gap-2 px-3 mb-2">
-            {!collapsed && (
-              <>
-                <Building className="h-3.5 w-3.5 text-indigo-400" />
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-400">
-                  White-Label
-                </span>
-                <span className="ml-auto flex h-4 min-w-[16px] items-center justify-center rounded-full bg-indigo-600/20 px-1.5 text-[10px] font-medium text-indigo-400">
-                  2
-                </span>
-              </>
-            )}
-          </div>
+        {isAgencyAdmin && (
+          <div className="mt-6 pt-4 border-t border-zinc-800">
+            <div className="flex items-center gap-2 px-3 mb-2">
+              {!collapsed && (
+                <>
+                  <Building className="h-3.5 w-3.5 text-indigo-400" />
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-400">
+                    White-Label
+                  </span>
+                  <span className="ml-auto flex h-4 min-w-[16px] items-center justify-center rounded-full bg-indigo-600/20 px-1.5 text-[10px] font-medium text-indigo-400">
+                    2
+                  </span>
+                </>
+              )}
+            </div>
 
-          {agencyNav.map((item) => {
-            const active = isActive(item)
+            {agencyNav.map((item) => {
+              const active = isActive(item)
 
-            if (collapsed) {
+              if (collapsed) {
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      'flex h-9 w-full items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-800/60 hover:text-white',
+                      active && 'bg-indigo-600/10 text-indigo-400'
+                    )}
+                    title={item.name}
+                  >
+                    <item.icon className="h-[18px] w-[18px]" />
+                  </Link>
+                )
+              }
+
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    'flex h-9 w-full items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-800/60 hover:text-white',
-                    active && 'bg-indigo-600/10 text-indigo-400'
+                    'flex h-8 items-center gap-3 rounded-lg px-3 text-sm text-zinc-500 transition-colors hover:bg-zinc-800/60 hover:text-zinc-300',
+                    active && 'bg-indigo-600/10 text-indigo-400 font-medium'
                   )}
-                  title={item.name}
                 >
-                  <item.icon className="h-[18px] w-[18px]" />
+                  <item.icon className="h-[18px] w-[18px] shrink-0" />
+                  <span>{item.name}</span>
                 </Link>
               )
-            }
+            })}
 
-            return (
+            {!collapsed && (
               <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  'flex h-8 items-center gap-3 rounded-lg px-3 text-sm text-zinc-500 transition-colors hover:bg-zinc-800/60 hover:text-zinc-300',
-                  active && 'bg-indigo-600/10 text-indigo-400 font-medium'
-                )}
+                href="/agency/new"
+                className="mt-1 flex h-8 items-center gap-2 rounded-lg border border-dashed border-zinc-800 px-3 text-[13px] text-indigo-400 transition-colors hover:border-indigo-600/40 hover:bg-indigo-600/5"
               >
-                <item.icon className="h-[18px] w-[18px] shrink-0" />
-                <span>{item.name}</span>
+                <Zap className="h-3.5 w-3.5" />
+                <span>Add client account</span>
+                <ChevronDown className="ml-auto h-3 w-3 -rotate-90" />
               </Link>
-            )
-          })}
-
-          {!collapsed && (
-            <Link
-              href="/agency/new"
-              className="mt-1 flex h-8 items-center gap-2 rounded-lg border border-dashed border-zinc-800 px-3 text-[13px] text-indigo-400 transition-colors hover:border-indigo-600/40 hover:bg-indigo-600/5"
-            >
-              <Zap className="h-3.5 w-3.5" />
-              <span>Add client account</span>
-              <ChevronDown className="ml-auto h-3 w-3 -rotate-90" />
-            </Link>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </nav>
 
       <div className="border-t border-zinc-800 p-3">

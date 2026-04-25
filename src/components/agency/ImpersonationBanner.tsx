@@ -39,7 +39,7 @@ export function ImpersonationBanner() {
         <div className="flex items-center gap-2">
           <Eye size={16} />
           <span className="text-sm font-semibold">
-            Viewing as {brand.brandName}
+            Viewing as {brand.impersonatingSubAccountName ?? brand.brandName}
           </span>
           <span className="text-xs opacity-70">
             — read-only session, expires soon
