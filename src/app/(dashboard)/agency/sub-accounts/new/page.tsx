@@ -1,40 +1,58 @@
 'use client'
 
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft, Building2, User, Mail, Phone,
-  Loader2, CheckCircle, AlertTriangle, ChevronRight
+  Loader2, CheckCircle, AlertTriangle, ChevronRight, DollarSign
 } from 'lucide-react'
+import { SUB_ACCOUNT_PLANS, type SubAccountPlan } from '@/lib/schemas/stage3'
 
-const PLANS = [
-  {
-    id: 'starter',
+// ── Stage 3.3 — Add client account form ───────────────────────────────────
+// Calls POST /api/agency/create-client which:
+//   1. Calls create_sub_account RPC (org row + TCPA defaults + audit log)
+//   2. Sends Supabase magic-link invite to adminEmail
+//   3. Links the invited user's profile.organization_id = newOrgId
+//
+// No passwords are handled here — clients receive an email and set their own.
+//
+// Schema migration vs. pre-Stage-3.1 form:
+//   - Removed: password, confirmPassword, agencies lookup, clientOverageRate
+//   - Added: agencyBilledAmount (what the agency charges this client/mo)
+//   - Plan price/minutes are display hints only — the RPC accepts ai_minutes_limit
+//     directly so the agency can override defaults if they want.
+
+const PLAN_DEFAULTS: Record<SubAccountPlan, {
+  label: string
+  ourPrice: number      // what Lead Friendly charges the agency
+  minutes: number
+  agents: number
+  description: string
+  recommended?: boolean
+}> = {
+  starter: {
     label: 'Starter',
-    price: 39,
+    ourPrice: 39,
     minutes: 150,
     agents: 1,
     description: 'Solo / testing',
   },
-  {
-    id: 'growth',
+  growth: {
     label: 'Growth',
-    price: 99,
+    ourPrice: 99,
     minutes: 350,
     agents: 3,
     description: 'Regular users',
     recommended: true,
   },
-  {
-    id: 'agency',
-    label: 'Agency',
-    price: 149,
+  pro: {
+    label: 'Pro',
+    ourPrice: 149,
     minutes: 600,
     agents: 10,
     description: 'Power users',
   },
-]
+}
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -47,15 +65,19 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 }
 
 function Input({
-  value, onChange, placeholder, type = 'text', icon: Icon
+  value, onChange, placeholder, type = 'text', icon: Icon, prefix,
 }: {
   value: string; onChange: (v: string) => void
   placeholder?: string; type?: string; icon?: React.ElementType
+  prefix?: string
 }) {
   return (
     <div className="flex items-center bg-zinc-900 border border-zinc-700 rounded-lg overflow-hidden focus-within:border-indigo-500 transition-colors">
       {Icon && (
         <span className="pl-3 text-zinc-500"><Icon size={15} /></span>
+      )}
+      {prefix && (
+        <span className="pl-3 pr-1 text-zinc-500 text-sm">{prefix}</span>
       )}
       <input
         type={type}
@@ -69,65 +91,57 @@ function Input({
 }
 
 export default function NewSubAccountPage() {
-  const supabase = createClient()
   const router = useRouter()
 
   const [step, setStep] = useState<'details' | 'plan' | 'confirm'>('details')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [created, setCreated] = useState(false)
+  const [createdOrgId, setCreatedOrgId] = useState<string | null>(null)
+  const [inviteStatus, setInviteStatus] = useState<{ sent: boolean; error?: string } | null>(null)
 
   // Form fields
   const [companyName, setCompanyName] = useState('')
   const [contactName, setContactName] = useState('')
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
   const [phone, setPhone] = useState('')
-  const [selectedPlan, setSelectedPlan] = useState('starter')
-  const [clientOverageRate, setClientOverageRate] = useState('0.25')
-  const [createdCredentials, setCreatedCredentials] = useState<{ email: string; password: string } | null>(null)
+  const [selectedPlan, setSelectedPlan] = useState<SubAccountPlan>('starter')
+  // What the agency bills its client per month (different from what we charge them).
+  // Defaults to the plan's our-price as a starting point; agency adjusts.
+  const [billedAmount, setBilledAmount] = useState('')
 
-  const plan = PLANS.find(p => p.id === selectedPlan)!
+  const plan = PLAN_DEFAULTS[selectedPlan]
 
   async function handleCreate() {
-    if (password !== confirmPassword) {
-      setError('Passwords do not match')
-      return
-    }
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters')
-      return
-    }
     setSaving(true)
     setError(null)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
-
-      const { data: agency } = await supabase
-        .from('agencies').select('id').eq('user_id', user.id).single()
+      const billedNum = billedAmount ? Number(billedAmount) : null
+      if (billedAmount && (Number.isNaN(billedNum) || billedNum! < 0)) {
+        throw new Error('Monthly fee must be a non-negative number')
+      }
 
       const res = await fetch('/api/agency/create-client', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email,
-          password,
-          contactName,
-          companyName,
-          phone,
+          name: companyName,
+          adminEmail: email || null,
           plan: selectedPlan,
-          agencyId: agency?.id || user.id,
-          monthlyFee: plan.price,
-          minutesIncluded: plan.minutes,
-          clientOverageRate: parseFloat(clientOverageRate),
+          agencyBilledAmount: billedNum,
+          aiMinutesLimit: plan.minutes,  // start at plan default; agency can edit later
+          sendInvite: !!email,
         }),
       })
-      const data = await res.json() as { error?: string; credentials?: { email: string; password: string } }
-      if (!res.ok) throw new Error(data.error || 'Failed to create client')
+      const data = await res.json() as {
+        error?: string
+        subOrganizationId?: string
+        invite?: { sent: boolean; error?: string } | null
+      }
+      if (!res.ok) throw new Error(data.error || 'Failed to create client account')
 
-      setCreatedCredentials(data.credentials || null)
+      setCreatedOrgId(data.subOrganizationId ?? null)
+      setInviteStatus(data.invite ?? null)
       setCreated(true)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to create sub-account')
@@ -138,33 +152,61 @@ export default function NewSubAccountPage() {
 
   if (created) return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-6">
-      <div className="text-center space-y-5 max-w-sm w-full">
+      <div className="text-center space-y-5 max-w-md w-full">
         <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto">
           <CheckCircle size={32} className="text-emerald-400" />
         </div>
         <p className="text-xl font-semibold text-white">Client account created!</p>
-        {createdCredentials && (
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-4 text-left space-y-2">
-            <p className="text-xs font-medium text-zinc-400 uppercase tracking-wide mb-3">Share with your client</p>
-            <div>
-              <p className="text-xs text-zinc-500">Login URL</p>
-              <p className="text-sm text-indigo-400 font-mono">https://leadfriendly.com/login</p>
+
+        {inviteStatus?.sent ? (
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-5 text-left space-y-3">
+            <div className="flex items-center gap-2 text-emerald-400 text-sm font-medium">
+              <Mail size={14} /> Invite sent
             </div>
-            <div>
-              <p className="text-xs text-zinc-500">Email</p>
-              <p className="text-sm text-white font-mono">{createdCredentials.email}</p>
+            <p className="text-sm text-zinc-300">
+              We sent a magic-link invite to <span className="font-mono text-white">{email}</span>.
+            </p>
+            <p className="text-xs text-zinc-500">
+              The client clicks the link in their email to set up their password and sign in.
+              The invite is valid for 24 hours; you can re-invite from the sub-account settings page if it expires.
+            </p>
+          </div>
+        ) : email ? (
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-left space-y-2">
+            <div className="flex items-center gap-2 text-amber-400 text-sm font-medium">
+              <AlertTriangle size={14} /> Account created, but invite failed
             </div>
-            <div>
-              <p className="text-xs text-zinc-500">Password</p>
-              <p className="text-sm text-white font-mono">{createdCredentials.password}</p>
-            </div>
-            <p className="text-xs text-amber-400/80 pt-2">⚠ Save these credentials now — they won&apos;t be shown again.</p>
+            <p className="text-sm text-zinc-300">
+              The sub-account is ready, but we couldn&apos;t send the invite email.
+            </p>
+            {inviteStatus?.error && (
+              <p className="text-xs text-zinc-500 font-mono break-all">{inviteStatus.error}</p>
+            )}
+            <p className="text-xs text-zinc-500">
+              You can resend from the sub-account settings page once the issue is resolved.
+            </p>
+          </div>
+        ) : (
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-4 text-left">
+            <p className="text-sm text-zinc-300">
+              Account created. No admin email was provided, so no invite was sent yet.
+              You can invite a user later from the sub-account settings page.
+            </p>
           </div>
         )}
-        <button onClick={() => router.push('/agency/dashboard')}
-          className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors">
-          Go to dashboard
-        </button>
+
+        <div className="flex gap-3 pt-2">
+          <button onClick={() => router.push('/agency/dashboard')}
+            className="flex-1 py-2.5 border border-zinc-700 text-zinc-400 hover:text-zinc-300 text-sm font-medium rounded-lg transition-colors">
+            Back to dashboard
+          </button>
+          {createdOrgId && (
+            <button onClick={() => router.push(`/agency/sub-accounts/${createdOrgId}/settings`)}
+              className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors">
+              Open sub-account
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -213,24 +255,18 @@ export default function NewSubAccountPage() {
               <Building2 size={16} className="text-indigo-400" /> Client information
             </h2>
 
-            <Field label="Company name" hint="This is what the client sees — your brand, not Lead Friendly">
+            <Field label="Company name" hint="Shown in the client's portal — their brand, not yours">
               <Input value={companyName} onChange={setCompanyName} placeholder="Acme Corp" icon={Building2} />
             </Field>
 
-            <Field label="Contact name">
+            <Field label="Contact name (optional)">
               <Input value={contactName} onChange={setContactName} placeholder="Jane Smith" icon={User} />
             </Field>
 
-            <Field label="Email">
+            <Field
+              label="Admin email"
+              hint="We'll email a magic-link invite. They click it, set a password, and sign in.">
               <Input value={email} onChange={setEmail} placeholder="jane@acmecorp.com" type="email" icon={Mail} />
-            </Field>
-
-            <Field label="Password" hint="Client will use this to log in. Min 8 characters.">
-              <Input value={password} onChange={setPassword} placeholder="Min 8 characters" type="password" icon={User} />
-            </Field>
-
-            <Field label="Confirm password">
-              <Input value={confirmPassword} onChange={setConfirmPassword} placeholder="Re-enter password" type="password" icon={User} />
             </Field>
 
             <Field label="Phone (optional)">
@@ -239,7 +275,7 @@ export default function NewSubAccountPage() {
 
             <button
               onClick={() => setStep('plan')}
-              disabled={!companyName || !email || !password || password !== confirmPassword}
+              disabled={!companyName.trim()}
               className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2">
               Continue to plan <ChevronRight size={16} />
             </button>
@@ -250,63 +286,62 @@ export default function NewSubAccountPage() {
         {step === 'plan' && (
           <div className="space-y-4">
             <div className="space-y-3">
-              {PLANS.map(p => (
-                <button
-                  key={p.id}
-                  onClick={() => setSelectedPlan(p.id)}
-                  className={`w-full text-left p-4 rounded-xl border transition-all ${
-                    selectedPlan === p.id
-                      ? 'border-indigo-500 bg-indigo-500/10'
-                      : 'border-zinc-800 bg-zinc-900 hover:border-zinc-700'
-                  }`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-white">{p.label}</span>
-                      {p.recommended && (
-                        <span className="text-xs bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 px-2 py-0.5 rounded-full">
-                          Popular
-                        </span>
-                      )}
+              {SUB_ACCOUNT_PLANS.map(planId => {
+                const p = PLAN_DEFAULTS[planId]
+                return (
+                  <button
+                    key={planId}
+                    onClick={() => setSelectedPlan(planId)}
+                    className={`w-full text-left p-4 rounded-xl border transition-all ${
+                      selectedPlan === planId
+                        ? 'border-indigo-500 bg-indigo-500/10'
+                        : 'border-zinc-800 bg-zinc-900 hover:border-zinc-700'
+                    }`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-white">{p.label}</span>
+                        {p.recommended && (
+                          <span className="text-xs bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 px-2 py-0.5 rounded-full">
+                            Popular
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg font-semibold text-white">${p.ourPrice}</span>
+                        <span className="text-xs text-zinc-500">/mo you pay us</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg font-semibold text-white">${p.price}</span>
-                      <span className="text-xs text-zinc-500">/mo you pay us</span>
+                    <div className="flex items-center gap-4 text-xs text-zinc-500">
+                      <span>{p.minutes} min/mo included</span>
+                      <span>·</span>
+                      <span>{p.agents} AI agent{p.agents > 1 ? 's' : ''}</span>
+                      <span>·</span>
+                      <span>{p.description}</span>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-4 text-xs text-zinc-500">
-                    <span>{p.minutes} min/mo included</span>
-                    <span>·</span>
-                    <span>{p.agents} AI agent{p.agents > 1 ? 's' : ''}</span>
-                    <span>·</span>
-                    <span>{p.description}</span>
-                  </div>
-                  <div className="mt-2 text-xs text-zinc-600">
-                    You bill client → ${p.price}–${p.price + 110}/mo · margin: ${Math.round(p.price * 0.6)}–${p.price + 70}/mo
-                  </div>
-                </button>
-              ))}
+                  </button>
+                )
+              })}
             </div>
 
-            {/* Client overage rate */}
+            {/* Agency-billed amount */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
-              <p className="text-sm font-medium text-zinc-300">Your overage rate to client</p>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center bg-zinc-800 border border-zinc-700 rounded-lg overflow-hidden flex-1 focus-within:border-indigo-500">
-                  <span className="px-3 text-zinc-500 border-r border-zinc-700">$</span>
-                  <input
-                    type="number"
-                    value={clientOverageRate}
-                    onChange={e => setClientOverageRate(e.target.value)}
-                    step="0.01"
-                    className="flex-1 px-3 py-2 text-sm text-white bg-transparent outline-none"
-                  />
-                  <span className="px-3 text-zinc-500">/min</span>
-                </div>
-                <div className="text-xs text-zinc-500 text-right">
-                  <div className="text-zinc-400">We charge you: <span className="text-red-400">$0.14/min</span></div>
-                  <div className="text-zinc-400">Your margin: <span className="text-emerald-400">${(parseFloat(clientOverageRate) - 0.14).toFixed(2)}/min</span></div>
-                </div>
-              </div>
+              <p className="text-sm font-medium text-zinc-300">Your monthly fee to client (optional)</p>
+              <p className="text-xs text-zinc-500 -mt-1">
+                What you charge this client per month. Used for your MRR dashboard. Leave blank if billed elsewhere.
+              </p>
+              <Input
+                value={billedAmount}
+                onChange={setBilledAmount}
+                placeholder={String(plan.ourPrice * 2)}
+                type="number"
+                prefix="$"
+                icon={DollarSign}
+              />
+              {billedAmount && Number(billedAmount) >= plan.ourPrice && (
+                <p className="text-xs text-emerald-400">
+                  Margin: ${(Number(billedAmount) - plan.ourPrice).toFixed(2)}/mo
+                </p>
+              )}
             </div>
 
             <div className="flex gap-3">
@@ -332,12 +367,11 @@ export default function NewSubAccountPage() {
                 {[
                   ['Company', companyName],
                   ['Contact', contactName || '—'],
-                  ['Email', email],
-                  ['Plan', `${plan.label} — $${plan.price}/mo`],
+                  ['Admin email', email || '— (no invite will be sent)'],
+                  ['Plan', `${plan.label} — $${plan.ourPrice}/mo (Lead Friendly)`],
                   ['Minutes included', `${plan.minutes}/mo`],
                   ['AI agents', plan.agents.toString()],
-                  ['Client overage rate', `$${clientOverageRate}/min`],
-                  ['Your overage margin', `$${(parseFloat(clientOverageRate) - 0.14).toFixed(2)}/min`],
+                  ['Your fee to client', billedAmount ? `$${Number(billedAmount).toFixed(2)}/mo` : '— (not tracked)'],
                 ].map(([label, value]) => (
                   <div key={label} className="flex justify-between text-sm py-2 border-b border-zinc-800 last:border-0">
                     <span className="text-zinc-500">{label}</span>
@@ -347,8 +381,9 @@ export default function NewSubAccountPage() {
               </div>
 
               <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-lg p-3 text-xs text-indigo-300">
-                This creates an active sub-account. The client can be onboarded immediately.
-                You will be billed ${plan.price}/mo for this account starting next invoice cycle.
+                {email
+                  ? 'On submit: the sub-account is created and a magic-link invite is emailed to the admin. They set their own password.'
+                  : 'On submit: the sub-account is created. You can invite a user later from the sub-account settings page.'}
               </div>
             </div>
 

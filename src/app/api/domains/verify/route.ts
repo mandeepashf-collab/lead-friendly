@@ -161,6 +161,28 @@ export async function POST(request: NextRequest) {
     .update(updates)
     .eq("id", domain_id);
 
+  // Stage 3.2.1 — propagate verified domain to organizations.custom_domain
+  // so middleware's resolveOrgByHostname() picks it up and serves white-label
+  // branding for that hostname.
+  if (updates.status === "active") {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("organization_id")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profile?.organization_id) {
+      await supabase
+        .from("organizations")
+        .update({
+          custom_domain: domainRecord.domain,
+          domain_status: "verified",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", profile.organization_id);
+    }
+  }
+
   return NextResponse.json({
     txt_verified: txtOk,
     cname_verified: cnameOk,

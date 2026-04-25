@@ -188,29 +188,43 @@ export async function middleware(request: NextRequest) {
                        hostname.includes('localhost')
 
   if (!isMainDomain) {
-    // This is a white-label custom domain — look up sub-account
-    const { data: subAccount } = await supabase
-      .from('sub_accounts')
-      .select('id, agency_id, company_name, logo_url, primary_color, accent_color, status')
-      .eq('custom_domain', hostname)
-      .single()
+    // White-label custom domain lookup.
+    //
+    // Stage 3.2 onward: only `organizations.custom_domain` is consulted.
+    // The legacy `sub_accounts.custom_domain` fallback was removed when
+    // Stage 3.1 dropped the sub_accounts table. Sub-accounts now ARE
+    // organization rows (with parent_organization_id set), so they're
+    // resolved by the same single lookup below.
 
-    if (subAccount) {
-      if (subAccount.status === 'paused' || subAccount.status === 'suspended') {
+    // Primary: organizations
+    const { data: org } = await supabase
+      .from('organizations')
+      .select('id, primary_logo_url, primary_color, portal_name, domain_status, is_active')
+      .eq('custom_domain', hostname)
+      .maybeSingle()
+
+    if (org) {
+      if (!org.is_active) {
         return NextResponse.redirect(new URL('/suspended', request.url))
       }
+      if (org.domain_status === 'dns_pending') {
+        return NextResponse.redirect(new URL('/domain-pending', request.url))
+      }
+      if (org.domain_status !== 'verified') {
+        return NextResponse.redirect(new URL('/unknown-domain', request.url))
+      }
 
-      // Inject sub-account branding into headers
-      // Layout reads these to apply client's brand
-      res.headers.set('x-sub-account-id', subAccount.id)
-      res.headers.set('x-agency-id', subAccount.agency_id)
-      res.headers.set('x-brand-name', subAccount.company_name || 'CRM')
-      res.headers.set('x-brand-color', subAccount.primary_color || '#6366f1')
-      res.headers.set('x-brand-logo', subAccount.logo_url || '')
+      res.headers.set('x-lf-org-id', org.id)
+      res.headers.set('x-brand-name', org.portal_name || 'CRM')
+      res.headers.set('x-brand-color', org.primary_color || '#6366f1')
+      res.headers.set('x-brand-logo', org.primary_logo_url || '')
       res.headers.set('x-is-white-label', 'true')
     } else {
-      // Unknown domain
-      return NextResponse.redirect(new URL('https://leadfriendly.com', request.url))
+      // No matching organizations.custom_domain. Stage 3.1 dropped the legacy
+      // sub_accounts table, so there's no fallback lookup — the only path to
+      // a verified custom domain is via Stage 3.2's organizations.custom_domain.
+      // Land on a friendly page, not the marketing site.
+      return NextResponse.redirect(new URL('/unknown-domain', request.url))
     }
   }
 
@@ -231,8 +245,8 @@ export async function middleware(request: NextRequest) {
   // Redirect users whose org has no active subscription to /billing so they
   // can start or fix their subscription. We skip:
   //   - all exempt paths above
-  //   - agency owners (subscription is per-org, but agencies have a different
-  //     billing model via the `agencies` table — leave them alone here)
+  //   - agency owners (subscription is per-org; sub-accounts inherit billing
+  //     status from their parent agency, not from their own org row)
   //
   // This check runs ONE extra DB query per request, which is why we gate it
   // behind an env flag. Flip it on after Stripe Prices are configured.
@@ -273,26 +287,49 @@ export async function middleware(request: NextRequest) {
   }
 
   // ── Impersonation check ─────────────────────────────────────
-  const impersonationToken = request.cookies.get('impersonation_token')?.value
-  const impersonationSubAccount = request.cookies.get('impersonation_sub_account')?.value
+  // Reads lf_impersonation_token httpOnly cookie set by /api/agency/impersonate.
+  // Validates via the get_active_impersonation RPC (granted to anon for
+  // middleware compat — the RPC itself returns no row if the token is
+  // expired/ended/invalid).
+  //
+  // On valid session: injects three response headers consumed by server
+  // components and the client BrandContext to render in the sub-account's
+  // identity. Stage 3.3 is read-only impersonation; cross-org writes are
+  // still blocked by RLS regardless of these headers.
+  const impersonationToken = request.cookies.get('lf_impersonation_token')?.value
 
-  if (impersonationToken && impersonationSubAccount) {
-    // Validate token is still valid
-    const { data: impSession } = await supabase
-      .from('impersonation_sessions')
-      .select('id, expires_at, ended_at')
-      .eq('token', impersonationToken)
-      .eq('sub_account_id', impersonationSubAccount)
-      .single()
+  // During the cookie rename rollout, also clear the old cookie names if
+  // they're still present in the browser. They were never httpOnly so users
+  // can have stale values lingering.
+  const legacyImpersonationToken = request.cookies.get('impersonation_token')?.value
+  const legacyImpersonationSubAccount = request.cookies.get('impersonation_sub_account')?.value
+  if (legacyImpersonationToken || legacyImpersonationSubAccount) {
+    res.cookies.delete('impersonation_token')
+    res.cookies.delete('impersonation_sub_account')
+  }
 
-    if (impSession && !impSession.ended_at && new Date(impSession.expires_at) > new Date()) {
-      // Valid impersonation — inject headers
-      res.headers.set('x-impersonating', 'true')
-      res.headers.set('x-impersonation-sub-account', impersonationSubAccount)
+  if (impersonationToken) {
+    const { data: rows } = await supabase.rpc('get_active_impersonation', {
+      p_token: impersonationToken,
+    })
+
+    // RPC returns a TABLE; supabase-js gives us an array. First row or null.
+    const sess = Array.isArray(rows) && rows.length > 0 ? rows[0] : null
+
+    if (sess) {
+      // Valid session — inject context headers
+      res.headers.set('x-lf-impersonation-active', '1')
+      res.headers.set('x-lf-acting-as-org-id', sess.sub_organization_id)
+      res.headers.set('x-lf-actor-user-id', sess.actor_user_id)
+      res.headers.set('x-lf-impersonation-expires-at', sess.expires_at)
+      // Optional: passing org name + actor email saves a DB roundtrip in
+      // the banner component. These are public-ish (already shown to the
+      // agency admin who started the session).
+      if (sess.sub_org_name) res.headers.set('x-lf-acting-as-org-name', sess.sub_org_name)
+      if (sess.actor_email) res.headers.set('x-lf-actor-email', sess.actor_email)
     } else {
-      // Expired — clear cookies
-      res.cookies.delete('impersonation_token')
-      res.cookies.delete('impersonation_sub_account')
+      // Token invalid/expired/ended — clear it so the next request is clean
+      res.cookies.delete('lf_impersonation_token')
     }
   }
 

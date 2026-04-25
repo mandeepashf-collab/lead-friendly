@@ -5,8 +5,8 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { AccountSwitcher } from '@/components/layout/AccountSwitcher'
+import { OrgLogo } from '@/components/OrgLogo'
 import {
-  Sparkles,
   LayoutDashboard,
   Rocket,
   Users,
@@ -74,9 +74,7 @@ export function Sidebar() {
       <div className="flex h-14 items-center justify-between border-b border-zinc-800 px-3">
         {collapsed ? (
           <Link href="/dashboard" className="flex items-center justify-center">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600">
-              <Sparkles className="h-4 w-4 text-white" />
-            </div>
+            <OrgLogo size={32} className="h-8 w-8" />
           </Link>
         ) : (
           <AccountSwitcher />
