@@ -4,18 +4,23 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { CreateSubAccountInputSchema } from '@/lib/schemas/stage3'
 
 // ────────────────────────────────────────────────────────────────────────────
-// Stage 3.3 — POST /api/agency/create-client
+// Stage 3.3 / 3.3.3 — POST /api/agency/create-client
 // ────────────────────────────────────────────────────────────────────────────
-// Replaces the pre-Stage-3.1 password-based provisioning flow. Now:
-//   1. Calls create_sub_account RPC (creates the org row + TCPA defaults +
-//      audit log; SECURITY DEFINER enforces caller is agency owner/admin).
-//   2. If sendInvite is true and adminEmail is set, sends a Supabase magic-
-//      link invite to that email. The invited user is linked to the new
-//      sub-account via profiles.organization_id on first signin.
-//   3. Returns the new sub-account id (and the invite status if applicable).
+// Provisions a sub-account org under the calling agency. Order matters:
+//   1. Auth + Zod validation.
+//   2. If sendInvite + adminEmail: invite the admin via Supabase magic-link
+//      FIRST. The is_sub_account_invite metadata flag short-circuits the
+//      handle_new_user trigger so no top-level "phantom" org is spun up
+//      when the invitee accepts. If the invite fails (e.g. "User already
+//      registered"), we return 4xx with NO DB writes — no orphan sub-org.
+//   3. Call create_sub_account RPC with the new p_admin_user_id parameter.
+//      When non-null, the RPC also creates a profiles row (role=owner) +
+//      a default Sales Pipeline for the sub-org. SECURITY DEFINER enforces
+//      caller is agency owner/admin.
+//   4. Return the new sub-account id + invite status.
 //
 // No password is created server-side. The agency hands the client either:
-//   - the magic-link email arrived in their inbox, OR
+//   - the magic-link email that arrived in their inbox, OR
 //   - the login URL + their email; client uses "Forgot password" to set one.
 //
 // Auth: the calling user's session is the auth surface. Service role key is
@@ -50,7 +55,40 @@ export async function POST(request: NextRequest) {
   }
   const input = parsed.data
 
-  // ── Create the sub-account via RPC (RPC enforces agency owner/admin) ─────
+  // ── Step 1: invite the admin first (if requested) ────────────────────────
+  // Order matters. If invite fails (e.g. "User already registered"), no DB
+  // writes have happened yet — the agency admin sees a clean 4xx and the
+  // sub-org isn't orphaned. The is_sub_account_invite metadata flag also
+  // short-circuits the handle_new_user trigger so no top-level phantom org
+  // is created when the invitee accepts. Profile + default pipeline are
+  // created by the create_sub_account RPC below via p_admin_user_id.
+  let invitedUserId: string | null = null
+  if (input.sendInvite && input.adminEmail) {
+    const adminClient = createServiceClient()
+    const { data: invited, error: inviteError } =
+      await adminClient.auth.admin.inviteUserByEmail(input.adminEmail, {
+        data: {
+          is_sub_account_invite: true,
+          sub_account_name: input.name,
+          invited_by_user_id: user.id,
+          role: 'owner',
+        },
+      })
+
+    if (inviteError) {
+      return NextResponse.json(
+        { error: `Invite failed: ${inviteError.message}` },
+        { status: 400 },
+      )
+    }
+
+    invitedUserId = invited?.user?.id ?? null
+  }
+
+  // ── Step 2: create the sub-account via RPC ───────────────────────────────
+  // RPC enforces caller is agency owner/admin. When p_admin_user_id is
+  // non-null, the RPC also creates a profiles row (role=owner) + a default
+  // Sales Pipeline for the new sub-org.
   const { data: newOrgId, error: rpcError } = await supabase.rpc(
     'create_sub_account',
     {
@@ -60,74 +98,28 @@ export async function POST(request: NextRequest) {
       p_agency_billed_amount: input.agencyBilledAmount ?? null,
       p_snapshot_id: input.snapshotId ?? null,
       p_ai_minutes_limit: input.aiMinutesLimit ?? null,
+      p_admin_user_id: invitedUserId,
     },
   )
 
   if (rpcError) {
-    // Map common RPC errors to friendly status codes.
-    // 42501 = insufficient_privilege; P0001 = our RAISE EXCEPTION.
+    // RPC failed *after* a successful invite. The invited auth.users row
+    // exists but is dormant (no profile = can't sign in). A future cleanup
+    // cron can sweep these. Surface a clear error to the agency admin.
+    // Map common RPC errors: 42501 = insufficient_privilege, P0001 = RAISE.
     const status =
       rpcError.code === '42501' ? 403
       : rpcError.code === 'P0001' ? 400
       : 500
-    return NextResponse.json({ error: rpcError.message }, { status })
-  }
-
-  // ── Optional: send a Supabase magic-link invite to the admin email ───────
-  let inviteResult: { sent: boolean; userId?: string; error?: string } | null = null
-
-  if (input.sendInvite && input.adminEmail) {
-    try {
-      const adminClient = createServiceClient()
-      const { data: invited, error: inviteError } =
-        await adminClient.auth.admin.inviteUserByEmail(input.adminEmail, {
-          data: {
-            sub_organization_id: newOrgId,
-            invited_by_user_id: user.id,
-            role: 'owner',
-          },
-        })
-
-      if (inviteError) {
-        // Org is already created; don't fail the whole request, but flag it.
-        inviteResult = { sent: false, error: inviteError.message }
-      } else if (invited.user) {
-        // Link the invited user's profile to the new sub-org so RLS resolves
-        // correctly the moment they confirm their email and sign in.
-        // We use the service client so this insert isn't blocked by RLS
-        // (the user has no session yet, can't satisfy the policy).
-        const { error: profileErr } = await adminClient
-          .from('profiles')
-          .upsert({
-            id: invited.user.id,
-            email: input.adminEmail,
-            organization_id: newOrgId,
-            role: 'owner',
-          })
-
-        if (profileErr) {
-          inviteResult = {
-            sent: true,
-            userId: invited.user.id,
-            error: `invite sent but profile link failed: ${profileErr.message}`,
-          }
-        } else {
-          inviteResult = { sent: true, userId: invited.user.id }
-        }
-      } else {
-        inviteResult = { sent: false, error: 'invite returned no user' }
-      }
-    } catch (e: unknown) {
-      inviteResult = {
-        sent: false,
-        error: e instanceof Error ? e.message : 'unknown invite error',
-      }
-    }
+    return NextResponse.json(
+      { error: `Failed to create sub-account: ${rpcError.message}` },
+      { status },
+    )
   }
 
   return NextResponse.json({
     success: true,
     subOrganizationId: newOrgId,
-    invite: inviteResult,
+    invite: invitedUserId ? { sent: true, userId: invitedUserId } : null,
   })
 }
