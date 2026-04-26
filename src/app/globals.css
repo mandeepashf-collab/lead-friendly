@@ -35,6 +35,12 @@
   --amber-ai:        #F59E0B;
   --amber-ai-bg:     rgba(245,158,11,0.10);
   --amber-ai-border: rgba(245,158,11,0.30);
+
+  /* Brand violet — semantic tokens for primary brand color */
+  --violet-primary:  #7C3AED;
+  --violet-hover:    #8B5CF6;
+  --violet-bg:       rgba(124,58,237,0.10);
+  --violet-border:   rgba(124,58,237,0.30);
 }
 
 @theme inline {
@@ -71,6 +77,12 @@
   --color-amber-ai:        var(--amber-ai);
   --color-amber-ai-bg:     var(--amber-ai-bg);
   --color-amber-ai-border: var(--amber-ai-border);
+
+  /* Brand violet bridge (Stage 3.6.2 follow-up) */
+  --color-violet-primary: var(--violet-primary);
+  --color-violet-hover:   var(--violet-hover);
+  --color-violet-bg:      var(--violet-bg);
+  --color-violet-border:  var(--violet-border);
 }
 
 @media (prefers-color-scheme: dark) {

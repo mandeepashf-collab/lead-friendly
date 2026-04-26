@@ -18,18 +18,30 @@ export async function GET() {
       .from("profiles").select("organization_id").eq("id", user.id).single();
     if (!profile) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const { data: org } = await supabase
-      .from("organizations")
-      .select("ai_minutes_used, ai_minutes_limit")
-      .eq("id", profile.organization_id)
-      .single();
+    // `used` comes from call_stats_by_org (the unified view that sums actual
+    // calls.duration_seconds), matching what Dashboard / Call Logs / Billing
+    // already display. The `organizations.ai_minutes_used` wallet column is
+    // not incremented by the call pipeline and was returning stale 0s.
+    // `limit` still comes from organizations.ai_minutes_limit.
+    const [statsRes, orgRes] = await Promise.all([
+      supabase
+        .from("call_stats_by_org")
+        .select("minutes_this_month")
+        .eq("organization_id", profile.organization_id)
+        .maybeSingle(),
+      supabase
+        .from("organizations")
+        .select("ai_minutes_limit")
+        .eq("id", profile.organization_id)
+        .maybeSingle(),
+    ]);
 
-    if (!org) return NextResponse.json({ used: 0, limit: 500 });
+    const used = (statsRes.data as { minutes_this_month?: number } | null)
+      ?.minutes_this_month ?? 0;
+    const limit = (orgRes.data as { ai_minutes_limit?: number } | null)
+      ?.ai_minutes_limit ?? 500;
 
-    return NextResponse.json({
-      used: (org as Record<string, unknown>).ai_minutes_used || 0,
-      limit: (org as Record<string, unknown>).ai_minutes_limit || 500,
-    });
+    return NextResponse.json({ used, limit });
   } catch (err) {
     return NextResponse.json({ used: 0, limit: 500 });
   }

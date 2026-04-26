@@ -98,6 +98,7 @@ export default function DashboardPage() {
   const [activeCampaigns, setActiveCampaigns] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [setupComplete, setSetupComplete] = useState(0);
+  const [totalSteps, setTotalSteps] = useState(7);
   const [bannerDismissed, setBannerDismissed] = useState(true);
 
   useEffect(() => {
@@ -170,15 +171,18 @@ export default function DashboardPage() {
 
     fetchDashboardData();
 
-    // Check launchpad progress
+    // Check launchpad progress. Total step count must mirror /launchpad's
+    // logic — paid users (active sub or in-trial) skip step 5 (Choose plan),
+    // landing on 6 total instead of 7.
     async function checkSetup() {
       try {
         const supabase = createClient();
-        const [c, a, cl, ca] = await Promise.all([
+        const [c, a, cl, ca, org] = await Promise.all([
           supabase.from("contacts").select("id").limit(1),
           supabase.from("ai_agents").select("id").limit(1),
           supabase.from("calls").select("id").limit(1),
           supabase.from("campaigns").select("id").limit(1),
+          supabase.from("organizations").select("subscription_status, trial_ends_at").limit(1).maybeSingle(),
         ]);
         let done = 0;
         if ((c.data?.length || 0) > 0) done++;
@@ -186,6 +190,14 @@ export default function DashboardPage() {
         if ((cl.data?.length || 0) > 0) done++;
         if ((ca.data?.length || 0) > 0) done++;
         setSetupComplete(done);
+
+        const subStatus = org.data?.subscription_status;
+        const trialEndsAt = org.data?.trial_ends_at;
+        const hasActiveSub =
+          subStatus === "active" ||
+          subStatus === "trialing" ||
+          (!!trialEndsAt && new Date(trialEndsAt) > new Date());
+        setTotalSteps(hasActiveSub ? 6 : 7);
       } catch { /* ignore */ }
     }
     checkSetup();
@@ -212,12 +224,12 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8">
       {/* Launchpad Banner */}
-      {!bannerDismissed && setupComplete < 6 && (
+      {!bannerDismissed && setupComplete < totalSteps && (
         <div className="flex items-center gap-4 rounded-xl border border-zinc-800 bg-zinc-900 p-4">
           <div className="flex-1">
-            <p className="text-sm font-medium text-white">Setup guide — {setupComplete} of 7 steps complete</p>
+            <p className="text-sm font-medium text-white">Setup guide — {setupComplete} of {totalSteps} steps complete</p>
             <div className="mt-2 h-1.5 w-full max-w-xs rounded-full bg-zinc-800">
-              <div className="h-1.5 rounded-full bg-indigo-600 transition-all" style={{ width: `${(setupComplete / 7) * 100}%` }} />
+              <div className="h-1.5 rounded-full bg-indigo-600 transition-all" style={{ width: `${(setupComplete / totalSteps) * 100}%` }} />
             </div>
           </div>
           <Link href="/launchpad" className="flex items-center gap-1 text-sm font-medium text-indigo-400 hover:text-indigo-300">
