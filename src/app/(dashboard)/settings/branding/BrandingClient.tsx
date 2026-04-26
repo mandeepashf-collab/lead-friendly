@@ -394,7 +394,7 @@ export function BrandingClient({ orgId, initialBrand }: Props) {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Branding</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Customize your portal's look, domain, and support info. Changes apply to everyone in your organization.
+            Customize your portal&apos;s look, domain, and support info. Changes apply to everyone in your organization.
           </p>
         </div>
         <div className="flex items-center gap-2">

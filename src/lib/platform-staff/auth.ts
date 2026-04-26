@@ -55,9 +55,10 @@ export async function requirePlatformStaff(): Promise<
  * Optional read-event audit logger. ENV-flag-gated; default off.
  * Call AFTER successful auth, BEFORE returning data.
  *
- * NOTE: audit_logs.organization_id is NOT NULL. List-view reads (no specific
- * org) pass organizationId: null and are silently skipped here — log them
- * elsewhere (e.g. HTTP request logs) if you need them.
+ * As of stage 3.5.3, audit_logs.organization_id is nullable. List-view reads
+ * (no specific org) pass organizationId: null and are recorded as org-agnostic
+ * events. RLS keeps null-org rows invisible to tenants — only service-role
+ * queries (i.e. other /api/platform/* routes) can read them.
  */
 export async function logStaffRead(
   admin: SupabaseClient,
@@ -71,7 +72,6 @@ export async function logStaffRead(
   },
 ): Promise<void> {
   if (process.env.PLATFORM_STAFF_LOG_READS !== 'true') return
-  if (!args.organizationId) return
 
   const { error } = await admin.from('audit_logs').insert({
     organization_id: args.organizationId,
