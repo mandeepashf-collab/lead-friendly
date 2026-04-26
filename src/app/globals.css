@@ -3,6 +3,38 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* === Engaging style tokens (Stage 3.6.1) === */
+  /* Status palette — used by stage pills, agent status, KPI accents */
+  --hot:        #F59E0B;
+  --hot-bg:     rgba(245,158,11,0.12);
+  --hot-border: rgba(245,158,11,0.25);
+  --warm:        #8B5CF6;
+  --warm-bg:     rgba(139,92,246,0.12);
+  --warm-border: rgba(139,92,246,0.25);
+  --cold:        #64748B;
+  --cold-bg:     rgba(100,116,139,0.12);
+  --cold-border: rgba(100,116,139,0.25);
+  --won:        #10B981;
+  --won-bg:     rgba(16,185,129,0.12);
+  --won-border: rgba(16,185,129,0.25);
+  --lost:       #EF4444;
+  --lost-bg:    rgba(239,68,68,0.12);
+  --lost-border:rgba(239,68,68,0.25);
+  --new:        #3B82F6;
+  --new-bg:     rgba(59,130,246,0.12);
+  --new-border: rgba(59,130,246,0.25);
+  --pink:        #EC4899;
+  --pink-bg:     rgba(236,72,153,0.12);
+  --pink-border: rgba(236,72,153,0.25);
+  --teal:        #14B8A6;
+  --teal-bg:     rgba(20,184,166,0.12);
+  --teal-border: rgba(20,184,166,0.25);
+
+  /* AI accent — used for "AI moment" markers (Ask AI buttons, AI badges, etc.) */
+  --amber-ai:        #F59E0B;
+  --amber-ai-bg:     rgba(245,158,11,0.10);
+  --amber-ai-border: rgba(245,158,11,0.30);
 }
 
 @theme inline {
@@ -10,6 +42,35 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Engaging-style status palette bridge (Stage 3.6.1) */
+  --color-hot:        var(--hot);
+  --color-hot-bg:     var(--hot-bg);
+  --color-hot-border: var(--hot-border);
+  --color-warm:        var(--warm);
+  --color-warm-bg:     var(--warm-bg);
+  --color-warm-border: var(--warm-border);
+  --color-cold:        var(--cold);
+  --color-cold-bg:     var(--cold-bg);
+  --color-cold-border: var(--cold-border);
+  --color-won:        var(--won);
+  --color-won-bg:     var(--won-bg);
+  --color-won-border: var(--won-border);
+  --color-lost:        var(--lost);
+  --color-lost-bg:     var(--lost-bg);
+  --color-lost-border: var(--lost-border);
+  --color-new:        var(--new);
+  --color-new-bg:     var(--new-bg);
+  --color-new-border: var(--new-border);
+  --color-pink:        var(--pink);
+  --color-pink-bg:     var(--pink-bg);
+  --color-pink-border: var(--pink-border);
+  --color-teal:        var(--teal);
+  --color-teal-bg:     var(--teal-bg);
+  --color-teal-border: var(--teal-border);
+  --color-amber-ai:        var(--amber-ai);
+  --color-amber-ai-bg:     var(--amber-ai-bg);
+  --color-amber-ai-border: var(--amber-ai-border);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -36,3 +97,50 @@ body {
 .scrollbar-none::-webkit-scrollbar {
   display: none;                  /* Chrome / Safari */
 }
+
+/* === Engaging style animations (Stage 3.6.1) === */
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0.6); }
+  50%      { box-shadow: 0 0 0 6px rgba(16,185,129,0); }
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
+@keyframes slide-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* StagePill component (Stage 3.6.1) */
+.stage-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  line-height: 1;
+}
+.stage-pill--hot  { background: var(--hot-bg);  color: var(--hot);  border-color: var(--hot-border); }
+.stage-pill--warm { background: var(--warm-bg); color: var(--warm); border-color: var(--warm-border); }
+.stage-pill--cold { background: var(--cold-bg); color: var(--cold); border-color: var(--cold-border); }
+.stage-pill--new  { background: var(--new-bg);  color: var(--new);  border-color: var(--new-border); }
+.stage-pill--won  { background: var(--won-bg);  color: var(--won);  border-color: var(--won-border); }
+.stage-pill--lost { background: var(--lost-bg); color: var(--lost); border-color: var(--lost-border); }
