@@ -345,8 +345,28 @@ export function BrandingClient({ orgId, initialBrand }: Props) {
         body: JSON.stringify(patch),
         credentials: 'include',
       })
+      if (!res.ok) {
+        // Try JSON first, fall back to text. Same pattern as the upload path
+        // (Stage 3.3.5) — Vercel/edge can return plain-text bodies for 413,
+        // 504, or HTML for some 5xx, none of which parse as JSON.
+        let message: string
+        try {
+          const json = await res.clone().json()
+          message = json.error || json.message || `Save failed (HTTP ${res.status})`
+        } catch {
+          if (res.status === 413) {
+            message = 'Save payload too large. Try removing recent changes and saving in smaller chunks.'
+          } else if (res.status >= 500) {
+            message = `Server error (HTTP ${res.status}). Try again in a moment.`
+          } else {
+            const text = await res.text()
+            const preview = text.trim().slice(0, 120)
+            message = preview || `Save failed (HTTP ${res.status})`
+          }
+        }
+        throw new Error(message)
+      }
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'save_failed')
       setBrand(json as OrgBrand)
       refreshGlobalBrand()
       setSaveState('saved')
