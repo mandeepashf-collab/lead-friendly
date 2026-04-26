@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { BRAND_PREVIEW_COOKIE_NAME } from '@/lib/schemas/stage3'
 
 // ── Lead Friendly Middleware ──────────────────────────────────
 //
@@ -252,10 +253,11 @@ export async function middleware(request: NextRequest) {
   // should appear not to exist, not redirect them somewhere visible.
   let isAgencyAdmin = false
   let isSubAccount = false
+  let userOrgId: string | null = null
   if (session) {
     const { data: userOrg } = await supabase
       .from('profiles')
-      .select('role, organizations!inner(parent_organization_id)')
+      .select('role, organization_id, organizations!inner(parent_organization_id)')
       .eq('id', session.user.id)
       .maybeSingle()
 
@@ -274,6 +276,7 @@ export async function middleware(request: NextRequest) {
         ['owner', 'admin'].includes(((userOrg.role as string) ?? '')) &&
         orgRow?.parent_organization_id == null
       isSubAccount = !!orgRow && orgRow.parent_organization_id != null
+      userOrgId = (userOrg.organization_id as string | null) ?? null
     }
 
     if (pathname.startsWith('/agency/') && !isAgencyAdmin) {
@@ -282,6 +285,22 @@ export async function middleware(request: NextRequest) {
   }
   res.headers.set('x-lf-user-is-agency-admin', isAgencyAdmin ? '1' : '0')
   res.headers.set('x-lf-user-is-sub-account', isSubAccount ? '1' : '0')
+
+  // ── Brand preview (Stage 3.4) ───────────────────────────────────────────
+  // Agency admins can opt into seeing their own brand on platform hosts via
+  // the lf_brand_preview cookie. We're already past the custom-domain early
+  // return at L97-109, so we know we're on a platform host here. Gate is:
+  // cookie="1" + authenticated + isAgencyAdmin + we resolved the user's org.
+  // The header is consumed by the root layout to override effectiveOrgId
+  // (impersonation > custom domain > preview > platform default).
+  if (
+    session &&
+    isAgencyAdmin &&
+    userOrgId &&
+    request.cookies.get(BRAND_PREVIEW_COOKIE_NAME)?.value === '1'
+  ) {
+    res.headers.set('x-lf-brand-preview-org-id', userOrgId)
+  }
 
   // ── Subscription gate (opt-in via SUBSCRIPTION_GATE_ENABLED) ────
   // Redirect users whose org has no active subscription to /billing so they

@@ -14,6 +14,7 @@ import {
 } from '@/lib/schemas/stage3'
 import { BrandingPreview } from './BrandingPreview'
 import CustomDomainManager from '@/components/agency/CustomDomainManager'
+import { BrandPreviewToggle } from '@/components/branding/BrandPreviewToggle'
 import {
   BRANDING_UPLOAD_ACCEPT_ATTR,
   BRANDING_UPLOAD_MAX_LABEL,
@@ -387,6 +388,7 @@ export function BrandingClient({ orgId, initialBrand }: Props) {
               <AlertCircle className="h-3.5 w-3.5" /> {saveErr ?? 'Save failed'}
             </span>
           )}
+          <BrandPreviewToggle />
           <button
             type="button"
             onClick={handleReset}

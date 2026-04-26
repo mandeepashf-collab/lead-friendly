@@ -46,6 +46,9 @@ interface BrandConfig {
   isAgencyAdmin: boolean
   /** Stage 3.3.1 — user's home org has a parent_organization_id. */
   isSubAccount: boolean
+  /** Stage 3.4 — brand was resolved via the preview cookie (not impersonation
+   *  or custom domain). Drives the persistent preview banner. */
+  isBrandPreview: boolean
 
   full: OrgBrand
   /** Manually re-fetch after a settings-page save. */
@@ -62,6 +65,7 @@ const defaultBrand: BrandConfig = {
   impersonatingSubAccountName: null,
   isAgencyAdmin: false,
   isSubAccount: false,
+  isBrandPreview: false,
   full: DEFAULT_BRAND,
   refresh: () => {},
 }
@@ -82,6 +86,7 @@ declare global {
     __LF_ORG_ID__?: string
     __LF_IMPERSONATION__?: ImpersonationHydration
     __LF_USER_ORG__?: { isAgencyAdmin: boolean; isSubAccount: boolean }
+    __LF_BRAND_PREVIEW__?: { active: boolean }
   }
 }
 
@@ -89,11 +94,13 @@ function orgBrandToLegacy(
   brand: OrgBrand,
   impersonation?: ImpersonationHydration | null,
 ): Omit<BrandConfig, 'refresh'> {
-  // Read role flags from the same hydration payload window the layout
-  // injects. Falls back to false on the server (typeof window check) and
-  // for legacy entry points without the payload.
+  // Read role flags + preview state from the hydration payload window the
+  // layout injects. Falls back to false on the server (typeof window check)
+  // and for legacy entry points without the payload.
   const userOrg =
     typeof window !== 'undefined' ? window.__LF_USER_ORG__ : undefined
+  const preview =
+    typeof window !== 'undefined' ? window.__LF_BRAND_PREVIEW__ : undefined
 
   return {
     brandName: brand.portalName,
@@ -105,6 +112,7 @@ function orgBrandToLegacy(
     impersonatingSubAccountName: impersonation?.subOrgName ?? null,
     isAgencyAdmin: userOrg?.isAgencyAdmin ?? false,
     isSubAccount: userOrg?.isSubAccount ?? false,
+    isBrandPreview: preview?.active === true,
     full: brand,
   }
 }

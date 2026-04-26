@@ -235,3 +235,13 @@ export interface AgencyMrrSummary {
 export const IMPERSONATION_COOKIE_NAME = 'lf_impersonation_token'
 export const IMPERSONATION_DEFAULT_TTL_SECONDS = 15 * 60  // 15 min
 export const IMPERSONATION_MAX_TTL_SECONDS = 60 * 60      // 60 min (RPC enforces)
+
+// ════════════════════════════════════════════════════════════════════════════
+// Stage 3.4 — Brand preview toggle
+// ════════════════════════════════════════════════════════════════════════════
+// Opt-in cookie that flips an agency admin from platform-default brand to
+// their own org's brand on platform hosts (leadfriendly.com, *.vercel.app,
+// localhost). Custom-domain hosts always win over preview. Sub-accounts and
+// non-admins are gated out server-side.
+export const BRAND_PREVIEW_COOKIE_NAME = 'lf_brand_preview'
+export const BRAND_PREVIEW_COOKIE_MAX_AGE = 60 * 60 * 24 * 7 // 7 days
