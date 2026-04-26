@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { requirePlatformStaff, logStaffRead } from '@/lib/platform-staff/auth'
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 // ────────────────────────────────────────────────────────────────────────────
 // Stage 3.5.1 — GET /api/platform/orgs/[id]/audit-log
 // ────────────────────────────────────────────────────────────────────────────
@@ -16,6 +18,9 @@ export async function GET(
   const { admin } = result.ctx
 
   const { id } = await params
+  if (!UUID_RE.test(id)) {
+    return NextResponse.json({ error: 'Invalid org id' }, { status: 400 })
+  }
   const { searchParams } = new URL(req.url)
   const limitRaw = parseInt(searchParams.get('limit') ?? '50', 10)
   const limit = Math.min(Math.max(isNaN(limitRaw) ? 50 : limitRaw, 1), 200)

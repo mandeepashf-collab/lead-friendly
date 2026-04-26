@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { requirePlatformStaff, logStaffRead } from '@/lib/platform-staff/auth'
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 // ────────────────────────────────────────────────────────────────────────────
 // Stage 3.5.1 — GET /api/platform/orgs/[id]
 // ────────────────────────────────────────────────────────────────────────────
@@ -19,6 +21,9 @@ export async function GET(
   const { admin } = result.ctx
 
   const { id } = await params
+  if (!UUID_RE.test(id)) {
+    return NextResponse.json({ error: 'Invalid org id' }, { status: 400 })
+  }
 
   const { data: org, error } = await admin
     .from('organizations')
