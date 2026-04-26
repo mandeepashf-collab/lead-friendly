@@ -27,11 +27,8 @@ export function VoiceMinutesMeter({ className }: { className?: string }) {
   const isUnlimited = limit === null
   const pct = isUnlimited ? 0 : Math.min(100, (used / Math.max(limit ?? 1, 1)) * 100)
 
-  // Threshold colors via Stage 3.6.1 bridge utilities (verified: bg-lost,
-  // bg-hot resolve via @theme inline). Comfortable state uses Tailwind's
-  // default violet palette.
   const barClass =
-    pct >= 90 ? 'bg-lost' : pct >= 70 ? 'bg-hot' : 'bg-violet-500'
+    pct >= 90 ? 'bg-lost' : pct >= 70 ? 'bg-hot' : 'bg-violet-primary'
 
   return (
     <div className={cn('rounded-md bg-zinc-900 p-3', className)}>
