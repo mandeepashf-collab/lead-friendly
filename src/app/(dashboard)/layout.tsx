@@ -3,6 +3,7 @@
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { ImpersonationBanner } from "@/components/agency/ImpersonationBanner";
+import { BrandPreviewBanner } from "@/components/branding/BrandPreviewBanner";
 import { useSidebarStore } from "@/store/sidebar";
 import { useBrand } from "@/contexts/BrandContext";
 import { cn } from "@/lib/utils";
@@ -17,12 +18,14 @@ export default function DashboardLayout({
 }) {
   const { isCollapsed } = useSidebarStore();
   const brand = useBrand();
+  const showTopBanner = brand.isImpersonating || brand.isBrandPreview;
 
   return (
     <TcpaOverrideProvider>
       <SoftphoneProvider>
-        <div className={cn("min-h-screen bg-zinc-950 text-zinc-100", brand.isImpersonating && "pt-10")}>
+        <div className={cn("min-h-screen bg-zinc-950 text-zinc-100", showTopBanner && "pt-10")}>
           <ImpersonationBanner />
+          <BrandPreviewBanner />
           <Sidebar />
           <Header />
           <main
