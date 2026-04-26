@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Search } from "lucide-react";
+import Link from "next/link";
+import { Search, Shield } from "lucide-react";
 import { useSidebarStore } from "@/store/sidebar";
+import { useBrand } from "@/contexts/BrandContext";
 import { cn } from "@/lib/utils";
 import { NotificationPanel } from "@/components/layout/notification-panel";
 import { UserMenu } from "@/components/layout/user-menu";
@@ -12,6 +14,7 @@ import { QuickAdd } from "@/components/layout/quick-add";
 export function Header() {
   const { isCollapsed } = useSidebarStore();
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const brand = useBrand();
 
   // ⌘K / Ctrl+K opens command palette
   useEffect(() => {
@@ -49,6 +52,16 @@ export function Header() {
 
         {/* Actions */}
         <div className="flex items-center gap-2">
+          {brand.isPlatformStaff && (
+            <Link
+              href="/platform/orgs"
+              title="Platform staff console (Alt+Shift+P)"
+              className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-zinc-50"
+            >
+              <Shield className="h-4 w-4" />
+              Platform
+            </Link>
+          )}
           <QuickAdd />
           <NotificationPanel />
           <UserMenu initials="MS" name="Mandeep" />

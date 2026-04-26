@@ -49,6 +49,9 @@ interface BrandConfig {
   /** Stage 3.4 — brand was resolved via the preview cookie (not impersonation
    *  or custom domain). Drives the persistent preview banner. */
   isBrandPreview: boolean
+  /** Stage 3.5.2 — user is in the platform_staff table. Drives Platform
+   *  header link visibility + Alt+Shift+P shortcut. */
+  isPlatformStaff: boolean
 
   full: OrgBrand
   /** Manually re-fetch after a settings-page save. */
@@ -66,6 +69,7 @@ const defaultBrand: BrandConfig = {
   isAgencyAdmin: false,
   isSubAccount: false,
   isBrandPreview: false,
+  isPlatformStaff: false,
   full: DEFAULT_BRAND,
   refresh: () => {},
 }
@@ -87,6 +91,7 @@ declare global {
     __LF_IMPERSONATION__?: ImpersonationHydration
     __LF_USER_ORG__?: { isAgencyAdmin: boolean; isSubAccount: boolean }
     __LF_BRAND_PREVIEW__?: { active: boolean }
+    __LF_PLATFORM_STAFF__?: { isStaff: boolean }
   }
 }
 
@@ -101,6 +106,8 @@ function orgBrandToLegacy(
     typeof window !== 'undefined' ? window.__LF_USER_ORG__ : undefined
   const preview =
     typeof window !== 'undefined' ? window.__LF_BRAND_PREVIEW__ : undefined
+  const platformStaff =
+    typeof window !== 'undefined' ? window.__LF_PLATFORM_STAFF__ : undefined
 
   return {
     brandName: brand.portalName,
@@ -113,6 +120,7 @@ function orgBrandToLegacy(
     isAgencyAdmin: userOrg?.isAgencyAdmin ?? false,
     isSubAccount: userOrg?.isSubAccount ?? false,
     isBrandPreview: preview?.active === true,
+    isPlatformStaff: platformStaff?.isStaff === true,
     full: brand,
   }
 }

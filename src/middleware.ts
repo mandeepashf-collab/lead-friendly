@@ -254,13 +254,22 @@ export async function middleware(request: NextRequest) {
   let isAgencyAdmin = false
   let isSubAccount = false
   let userOrgId: string | null = null
+  let isPlatformStaff = false
   if (session) {
-    const { data: userOrg } = await supabase
-      .from('profiles')
-      .select('role, organization_id, organizations!inner(parent_organization_id)')
-      .eq('id', session.user.id)
-      .maybeSingle()
+    // Stage 3.5.2 — derive platform-staff status alongside the existing
+    // profile lookup. The is_platform_staff RPC is SECURITY DEFINER and
+    // queries a separate table, so we can't fold it into the profile select.
+    // Run them in parallel to keep this one round-trip wide instead of deep.
+    const [profileResult, staffResult] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('role, organization_id, organizations!inner(parent_organization_id)')
+        .eq('id', session.user.id)
+        .maybeSingle(),
+      supabase.rpc('is_platform_staff', { p_user_id: session.user.id }),
+    ])
 
+    const userOrg = profileResult.data
     if (userOrg) {
       // supabase-js can return the joined row as either an array or a single
       // object depending on the relationship cardinality it infers. Defensive
@@ -278,6 +287,7 @@ export async function middleware(request: NextRequest) {
       isSubAccount = !!orgRow && orgRow.parent_organization_id != null
       userOrgId = (userOrg.organization_id as string | null) ?? null
     }
+    isPlatformStaff = staffResult.data === true
 
     if (pathname.startsWith('/agency/') && !isAgencyAdmin) {
       return NextResponse.rewrite(new URL('/404', request.url))
@@ -285,6 +295,7 @@ export async function middleware(request: NextRequest) {
   }
   res.headers.set('x-lf-user-is-agency-admin', isAgencyAdmin ? '1' : '0')
   res.headers.set('x-lf-user-is-sub-account', isSubAccount ? '1' : '0')
+  res.headers.set('x-lf-platform-staff', isPlatformStaff ? '1' : '0')
 
   // ── Brand preview (Stage 3.4) ───────────────────────────────────────────
   // Agency admins can opt into seeing their own brand on platform hosts via
