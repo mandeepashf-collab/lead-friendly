@@ -178,7 +178,7 @@ export function Sidebar() {
 
             {!collapsed && (
               <Link
-                href="/agency/new"
+                href="/agency/sub-accounts/new"
                 className="mt-1 flex h-8 items-center gap-2 rounded-lg border border-dashed border-zinc-800 px-3 text-[13px] text-indigo-400 transition-colors hover:border-indigo-600/40 hover:bg-indigo-600/5"
               >
                 <Zap className="h-3.5 w-3.5" />

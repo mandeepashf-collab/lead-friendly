@@ -683,16 +683,12 @@ export default function SettingsPage() {
           >
             <ShieldCheck className="h-4 w-4" />Compliance
           </Link>
-          {/* Branding also lives on its own route (/settings/branding) — owners/admins only.
-              Stage 3.3.1: hidden for sub-account users (parent agency owns branding). */}
-          {!brand.isSubAccount && (
-            <Link
-              href="/settings/branding"
-              className="flex items-center gap-2 px-4 pb-3 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap flex-shrink-0 border-transparent text-zinc-500 hover:text-zinc-300"
-            >
-              <Palette className="h-4 w-4" />Branding
-            </Link>
-          )}
+          <Link
+            href="/settings/branding"
+            className="flex items-center gap-2 px-4 pb-3 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap flex-shrink-0 border-transparent text-zinc-500 hover:text-zinc-300"
+          >
+            <Palette className="h-4 w-4" />Branding
+          </Link>
         </div>
       </div>
 
