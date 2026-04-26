@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
+import {
+  BRANDING_UPLOAD_ALLOWED_MIME_TYPES,
+  BRANDING_UPLOAD_MAX_BYTES,
+} from '@/lib/branding/upload-constraints'
 
 // ────────────────────────────────────────────────────────────────────────────
 // Stage 3.2 — /api/org/[id]/brand/upload
@@ -9,19 +13,20 @@ import { createServiceClient } from '@/lib/supabase/service'
 //   file: the image
 //   kind: 'logo' | 'favicon'
 //
-// Validates: authenticated owner/admin of org, file size ≤ 2MB, mime whitelist.
+// Validates: authenticated owner/admin of org, file size + mime against the
+// shared client/server constraints (mirror the storage bucket settings).
 // Uploads to Supabase Storage bucket `branding-assets` at path
 // `{org_id}/{kind}-{timestamp}.{ext}` and returns { url } (public URL).
 // ────────────────────────────────────────────────────────────────────────────
 
-const LOGO_MIME = new Set(['image/png', 'image/jpeg', 'image/svg+xml', 'image/webp'])
-const FAVICON_MIME = new Set(['image/png', 'image/x-icon', 'image/vnd.microsoft.icon'])
-const MAX_BYTES = 2 * 1024 * 1024 // 2MB
+const ALLOWED_MIME = new Set<string>(BRANDING_UPLOAD_ALLOWED_MIME_TYPES)
 
 function extFromMime(m: string): string {
   switch (m) {
     case 'image/png': return 'png'
-    case 'image/jpeg': return 'jpg'
+    case 'image/jpeg':
+    case 'image/jpg': return 'jpg'
+    case 'image/gif': return 'gif'
     case 'image/svg+xml': return 'svg'
     case 'image/webp': return 'webp'
     case 'image/x-icon':
@@ -73,17 +78,16 @@ export async function POST(
     return NextResponse.json({ error: 'invalid_kind' }, { status: 400 })
   }
 
-  if (file.size > MAX_BYTES) {
+  if (file.size > BRANDING_UPLOAD_MAX_BYTES) {
     return NextResponse.json(
-      { error: 'file_too_large', maxBytes: MAX_BYTES },
+      { error: 'file_too_large', maxBytes: BRANDING_UPLOAD_MAX_BYTES },
       { status: 413 },
     )
   }
 
-  const allowed = kind === 'logo' ? LOGO_MIME : FAVICON_MIME
-  if (!allowed.has(file.type)) {
+  if (!ALLOWED_MIME.has(file.type)) {
     return NextResponse.json(
-      { error: 'unsupported_mime', allowed: Array.from(allowed) },
+      { error: 'unsupported_mime', allowed: Array.from(ALLOWED_MIME) },
       { status: 415 },
     )
   }

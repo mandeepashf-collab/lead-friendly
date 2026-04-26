@@ -14,6 +14,11 @@ import {
 } from '@/lib/schemas/stage3'
 import { BrandingPreview } from './BrandingPreview'
 import CustomDomainManager from '@/components/agency/CustomDomainManager'
+import {
+  BRANDING_UPLOAD_ACCEPT_ATTR,
+  BRANDING_UPLOAD_MAX_LABEL,
+  validateBrandingUpload,
+} from '@/lib/branding/upload-constraints'
 
 interface Props {
   orgId: string
@@ -212,6 +217,11 @@ function LogoUploader({
 
   async function handleUpload(file: File) {
     setErr(null)
+    const validationErr = validateBrandingUpload(file)
+    if (validationErr) {
+      setErr(validationErr)
+      return
+    }
     setUploading(true)
     try {
       const form = new FormData()
@@ -222,8 +232,25 @@ function LogoUploader({
         body: form,
         credentials: 'include',
       })
+      if (!res.ok) {
+        // Try JSON first, fall back to text. Vercel/edge can return plain-text
+        // errors (e.g. "Request Entity Too Large" for 413) that aren't valid JSON.
+        let message: string
+        try {
+          const json = await res.clone().json()
+          message = json.error || json.message || `Upload failed (HTTP ${res.status})`
+        } catch {
+          if (res.status === 413) {
+            message = `Logo too large. Max upload size is ${BRANDING_UPLOAD_MAX_LABEL}.`
+          } else {
+            const text = await res.text()
+            const preview = text.trim().slice(0, 120)
+            message = preview || `Upload failed (HTTP ${res.status})`
+          }
+        }
+        throw new Error(message)
+      }
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'upload_failed')
       onUploaded(json.url)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'upload_failed')
@@ -248,7 +275,7 @@ function LogoUploader({
           <input
             ref={inputRef}
             type="file"
-            accept={kind === 'logo' ? '.png,.jpg,.jpeg,.svg,.webp' : '.png,.ico'}
+            accept={BRANDING_UPLOAD_ACCEPT_ATTR}
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0]
@@ -274,7 +301,9 @@ function LogoUploader({
             </button>
           )}
           <p className="mt-1 text-xs text-zinc-600">
-            {kind === 'logo' ? 'PNG/JPG/SVG/WEBP, max 2MB' : 'PNG/ICO, max 2MB'}
+            {kind === 'logo'
+              ? `PNG, JPG, GIF, WebP, or SVG — max ${BRANDING_UPLOAD_MAX_LABEL}`
+              : `PNG, ICO, GIF, or SVG — max ${BRANDING_UPLOAD_MAX_LABEL}`}
           </p>
           {err && <p className="mt-1 text-xs text-rose-400">{err}</p>}
         </div>
