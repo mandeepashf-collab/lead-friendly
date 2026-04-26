@@ -77,7 +77,7 @@ function cleanupRateLimitStore() {
   }
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   cleanupRateLimitStore()
 
   const { pathname } = request.nextUrl
