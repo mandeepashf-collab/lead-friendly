@@ -10,7 +10,23 @@ import { UpdateOrgBrandInputSchema } from '@/lib/schemas/stage3'
 // GET   → return the org's current OrgBrand (cached 60s server-side).
 // PATCH → update branding fields; owners/admins of the org only.
 //         Validates via UpdateOrgBrandInputSchema; writes snake_case to DB.
+//         Stage 3.5.4 — writes a branding.updated audit row with a from/to
+//         diff. Long string fields (custom_css, signed logo URLs) are
+//         truncated to keep audit rows compact. No-op saves (every field
+//         unchanged) skip the audit insert entirely.
 // ────────────────────────────────────────────────────────────────────────────
+
+// Audit-log diff payload truncation. Branding fields are short by convention
+// (colors, font names, portal_name) but custom_css and signed logo URLs can
+// blow up the audit row. Strings over 500 chars get sliced to 500 + a marker
+// that preserves the original length for forensic purposes; non-strings pass
+// through untouched.
+function truncateValue(v: unknown): unknown {
+  if (typeof v === 'string' && v.length > 500) {
+    return v.slice(0, 500) + `...[truncated, ${v.length} chars total]`
+  }
+  return v
+}
 
 export async function GET(
   _req: NextRequest,
@@ -121,6 +137,16 @@ export async function PATCH(
   // auth check above is sufficient for Stage 3.2. After Stage 3.1 ships,
   // this should migrate to RLS-backed writes with a role-gated policy.
   const svc = createServiceClient()
+
+  // Read pre-update snapshot of just the columns being written, so the
+  // audit log below can record from/to diffs. Run this BEFORE the update.
+  const updateCols = Object.keys(update)
+  const { data: beforeRow } = await svc
+    .from('organizations')
+    .select(updateCols.join(', '))
+    .eq('id', orgId)
+    .maybeSingle()
+
   const { error: updateErr } = await svc
     .from('organizations')
     .update({ ...update, updated_at: new Date().toISOString() })
@@ -129,6 +155,48 @@ export async function PATCH(
   if (updateErr) {
     console.error('[PATCH /api/org/brand] update failed:', updateErr)
     return NextResponse.json({ error: 'update_failed' }, { status: 500 })
+  }
+
+  // Audit log — best-effort. Don't block on failure; the brand update has
+  // already committed. Skip the insert entirely for no-op saves where every
+  // field in the patch matched the existing value (the client may diff
+  // imperfectly — e.g. user edits then reverts a field — and we don't want
+  // to fill the audit log with empty-change rows).
+  try {
+    if (beforeRow) {
+      // supabase-js infers a GenericStringError union when .select() is
+      // called with a dynamically-built column list (vs a literal). Cast
+      // through unknown — by this point updateErr was null, so the row
+      // shape is known to be Record<column, value>.
+      const before = beforeRow as unknown as Record<string, unknown>
+      const changes: Record<string, { from: unknown; to: unknown }> = {}
+      for (const col of updateCols) {
+        const beforeVal = before[col]
+        const afterVal = update[col]
+        if (beforeVal !== afterVal) {
+          changes[col] = {
+            from: truncateValue(beforeVal),
+            to: truncateValue(afterVal),
+          }
+        }
+      }
+      if (Object.keys(changes).length > 0) {
+        const { error: auditErr } = await svc.from('audit_logs').insert({
+          organization_id: orgId,
+          user_id: user.id,
+          user_name: user.email ?? null,
+          action: 'branding.updated',
+          resource_type: 'organizations.brand',
+          resource_id: orgId,
+          details: { changes },
+        })
+        if (auditErr) {
+          console.warn('[PATCH /api/org/brand] audit log insert failed:', auditErr.message)
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[PATCH /api/org/brand] audit log block threw:', e)
   }
 
   invalidateOrgBrand(orgId)
