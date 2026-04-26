@@ -54,6 +54,10 @@ export default async function RootLayout({
   const userIsAgencyAdmin = hdrs.get("x-lf-user-is-agency-admin") === "1";
   const userIsSubAccount = hdrs.get("x-lf-user-is-sub-account") === "1";
 
+  // Stage 3.5.2 — platform-staff flag from middleware. Drives the Platform
+  // header link + the Alt+Shift+P shortcut + the /platform/* layout gate.
+  const userIsPlatformStaff = hdrs.get("x-lf-platform-staff") === "1";
+
   // Stage 3.4 — opt-in brand preview header. Set by middleware only when the
   // lf_brand_preview cookie is "1" AND the user is an agency admin AND we're
   // on a platform host. Carries the user's own organization_id.
@@ -107,6 +111,7 @@ export default async function RootLayout({
       : "",
     `window.__LF_USER_ORG__=${JSON.stringify(userOrgPayload)};`,
     `window.__LF_BRAND_PREVIEW__=${JSON.stringify({ active: isBrandPreview })};`,
+    `window.__LF_PLATFORM_STAFF__=${JSON.stringify({ isStaff: userIsPlatformStaff })};`,
   ].join("");
 
   return (
