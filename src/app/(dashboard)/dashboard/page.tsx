@@ -22,6 +22,8 @@ import { formatStatusDate, formatCurrencyCompact } from "@/lib/dashboard/format"
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { AgentCardsSection } from "@/components/dashboard/agent-cards-section";
 import { GoalWidget } from "@/components/dashboard/goal-widget";
+import { ActivityPulseFeed } from "@/components/dashboard/activity-pulse-feed";
+import { DailyDigestCard } from "@/components/dashboard/daily-digest-card";
 
 interface Stat {
   name: string;
@@ -323,7 +325,10 @@ export default function DashboardPage() {
         <div className="lg:col-span-2">
           <AgentCardsSection orgId={orgId} />
         </div>
-        <GoalWidget orgId={orgId} />
+        <div className="space-y-4">
+          <GoalWidget orgId={orgId} />
+          <DailyDigestCard orgId={orgId} />
+        </div>
       </div>
 
       {/* Two Column Layout */}
@@ -408,6 +413,9 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Activity Pulse (Stage 3.6.4) */}
+      <ActivityPulseFeed orgId={orgId} />
 
       {/* Recent Calls */}
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
