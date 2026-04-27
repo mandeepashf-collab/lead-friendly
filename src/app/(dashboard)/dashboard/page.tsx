@@ -6,9 +6,6 @@ import {
   Phone,
   Calendar,
   DollarSign,
-  ArrowUpRight,
-  ArrowDownRight,
-  Bot,
   Clock,
   X,
   ArrowRight,
@@ -17,10 +14,12 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { useBrand } from "@/contexts/BrandContext";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
+import { fetchDashboardKpis, type DashboardKpis } from "@/lib/dashboard/queries";
+import { formatStatusDate, formatCurrencyCompact } from "@/lib/dashboard/format";
+import { KpiCard } from "@/components/dashboard/kpi-card";
 
 interface Stat {
   name: string;
@@ -55,7 +54,6 @@ interface Appointment {
 }
 
 export default function DashboardPage() {
-  const brand = useBrand();
   const router = useRouter();
 
   // First-login redirect
@@ -85,13 +83,7 @@ export default function DashboardPage() {
     return () => { cancelled = true; };
   }, [router]);
 
-  const [stats, setStats] = useState<Stat[]>([
-    { name: "Total Contacts", value: "0", change: "+0%", trend: "up", icon: Users, color: "bg-indigo-600/10 text-indigo-400" },
-    { name: "Calls Today", value: "0", change: "+0%", trend: "up", icon: Phone, color: "bg-emerald-600/10 text-emerald-400" },
-    { name: "Appointments", value: "0", change: "+0%", trend: "up", icon: Calendar, color: "bg-cyan-600/10 text-cyan-400" },
-    { name: "Pipeline Value", value: "$0", change: "+0%", trend: "up", icon: DollarSign, color: "bg-amber-600/10 text-amber-400" },
-    { name: "AI Minutes Used", value: "0", change: "+0%", trend: "up" as const, icon: Bot, color: "bg-violet-600/10 text-violet-400" },
-  ]);
+  const [kpis, setKpis] = useState<DashboardKpis | null>(null);
   const [recentCalls, setRecentCalls] = useState<DashCall[]>([]);
   const [weekCalls, setWeekCalls] = useState<{ created_at: string; outcome: string | null }[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -141,13 +133,34 @@ export default function DashboardPage() {
         // Appointments booked (all time) — keep separate since it's not in the call_stats view
         const { count: apptCount } = await supabase.from("appointments").select("id", { count: "exact", head: true });
 
-        setStats((prev) => [
-          { ...prev[0], value: String(contactCount) },
-          { ...prev[1], value: String(callsToday) },
-          { ...prev[2], value: String(apptCount || 0) },
-          { ...prev[3], value: `$${pipelineValue.toLocaleString()}` },
-          { ...prev[4], value: String(totalMins) },
-        ]);
+        // Stage 3.6.3 — resolve effective org id.
+        // Priority:
+        //   1. __LF_ORG_ID__ — set by root layout when there's an override
+        //      (custom-domain visit, impersonation, or brand-preview cookie).
+        //   2. profile lookup — for vanilla platform-host visits. The
+        //      __LF_USER_ORG__ global doesn't yet expose an `id` field;
+        //      Stage 3.3.7 will extend it and let us drop this fallback.
+        const w = window as unknown as { __LF_ORG_ID__?: string | null };
+        let orgId: string | null = w.__LF_ORG_ID__ ?? null;
+
+        if (!orgId) {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const { data: profile } = await supabase
+              .from("profiles")
+              .select("organization_id")
+              .eq("id", user.id)
+              .maybeSingle();
+            orgId = profile?.organization_id ?? null;
+          }
+        }
+
+        if (!orgId) {
+          console.warn("[dashboard] Could not resolve org id (no __LF_ORG_ID__ and no profile); KPIs disabled");
+        } else {
+          const k = await fetchDashboardKpis(supabase, orgId);
+          setKpis(k);
+        }
 
         const formattedCalls = (recentCallsRes.data || []).map((c: Record<string, unknown>) => ({
           ...c,
@@ -241,40 +254,62 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Welcome Header */}
-      <div className="rounded-xl bg-gradient-to-r from-indigo-600/20 to-purple-600/20 border border-indigo-500/20 p-6">
-        <div className="flex items-center gap-2 text-sm font-medium text-indigo-400">
-          <Bot className="h-4 w-4" />
-          {brand.brandName.toUpperCase()}
-        </div>
-        <h1 className="mt-1 text-2xl font-bold text-white">
-          Welcome back, Mandeep
-        </h1>
-        <p className="mt-1 text-zinc-400">
-          Your AI sales platform is ready. Here&apos;s your daily briefing.
-        </p>
-        {activeCampaigns > 0 && (
-          <p className="mt-2 text-xs text-indigo-300">{activeCampaigns} active campaign{activeCampaigns !== 1 ? "s" : ""} running</p>
+      {/* Slim status header (Stage 3.6.3) */}
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm text-zinc-400">
+        <span className="font-medium text-zinc-200">{formatStatusDate()}</span>
+        <span className="text-zinc-600">·</span>
+        <span>
+          <span className="text-zinc-200 font-medium tabular-nums">{kpis?.callsToday ?? 0}</span> calls today
+        </span>
+        <span className="text-zinc-600">·</span>
+        <span>
+          <span className="text-zinc-200 font-medium tabular-nums">{kpis?.bookedLast30d ?? 0}</span> booked
+        </span>
+        {kpis && kpis.activeCampaigns > 0 && (
+          <>
+            <span className="text-zinc-600">·</span>
+            <span>
+              <span className="text-zinc-200 font-medium tabular-nums">{kpis.activeCampaigns}</span>{" "}
+              active campaign{kpis.activeCampaigns !== 1 ? "s" : ""}
+            </span>
+          </>
         )}
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {stats.map((stat) => (
-          <div key={stat.name} className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
-            <div className="flex items-center justify-between">
-              <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${stat.color}`}>
-                <stat.icon className="h-5 w-5" />
-              </div>
-              <span className={`flex items-center gap-1 text-xs font-medium ${stat.trend === "up" ? "text-emerald-400" : "text-red-400"}`}>
-                {stat.trend === "up" ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                {stat.change}
-              </span>
-            </div>
-            <p className="mt-3 text-2xl font-bold text-white">{stat.value}</p>
-            <p className="text-sm text-zinc-500">{stat.name}</p>
-          </div>
-        ))}
+      {/* KPI tiles (Stage 3.6.3) */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard
+          label="Calls today"
+          value={kpis ? String(kpis.callsToday) : "—"}
+          icon={Phone}
+          iconClass="bg-violet-500/15 text-violet-400"
+          sparkline={kpis?.sparklines.callsPerDay ?? []}
+          sparklineColor="var(--violet-primary)"
+        />
+        <KpiCard
+          label="Booked (30d)"
+          value={kpis ? String(kpis.bookedLast30d) : "—"}
+          icon={Calendar}
+          iconClass="bg-emerald-500/15 text-emerald-400"
+          sparkline={kpis?.sparklines.bookedPerDay ?? []}
+          sparklineColor="rgb(52 211 153)"
+        />
+        <KpiCard
+          label="Total contacts"
+          value={kpis ? String(kpis.totalContacts) : "—"}
+          icon={Users}
+          iconClass="bg-blue-500/15 text-blue-400"
+          sparkline={kpis?.sparklines.contactsCreatedPerDay ?? []}
+          sparklineColor="rgb(96 165 250)"
+        />
+        <KpiCard
+          label="Pipeline value"
+          value={kpis ? formatCurrencyCompact(kpis.pipelineValue) : "—"}
+          icon={DollarSign}
+          iconClass="bg-amber-500/15 text-amber-400"
+          sparkline={kpis?.sparklines.pipelineCreatedPerDay ?? []}
+          sparklineColor="rgb(251 191 36)"
+        />
       </div>
 
       {/* Two Column Layout */}
