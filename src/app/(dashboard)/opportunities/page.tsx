@@ -14,6 +14,7 @@ import { PipelineBoard } from "./pipeline-board";
 import { OpportunityDialog } from "./opportunity-dialog";
 import { PipelineViewToggle, parseViewFromSearchParams } from "@/components/pipeline/view-toggle";
 import { PipelineTable } from "@/components/pipeline/pipeline-table";
+import { PipelineTimeline } from "@/components/pipeline/pipeline-timeline";
 import type { Opportunity } from "@/types/database";
 import type { Campaign } from "@/types/database";
 
@@ -126,9 +127,14 @@ function OpportunitiesTab() {
           onAdd={() => { setEditOpp(null); setShowCreate(true); }}
         />
       ) : (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-12 text-center text-sm text-zinc-400">
-          Timeline view — shipping in Commit C
-        </div>
+        <PipelineTimeline
+          stages={Object.values(groupedByStage)}
+          onEventClick={(id) => {
+            const opp = opportunities.find((o) => o.id === id);
+            if (opp) { setEditOpp(opp); setShowCreate(true); }
+          }}
+          onAdd={() => { setEditOpp(null); setShowCreate(true); }}
+        />
       )}
 
       {showCreate && (
