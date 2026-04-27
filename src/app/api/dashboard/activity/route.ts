@@ -9,6 +9,8 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies, headers } from "next/headers";
 import { fetchActivityFeed } from "@/lib/dashboard/activity";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const cookieStore = await cookies();
