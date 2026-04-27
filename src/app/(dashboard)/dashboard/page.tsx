@@ -20,6 +20,8 @@ import {
 import { fetchDashboardKpis, type DashboardKpis } from "@/lib/dashboard/queries";
 import { formatStatusDate, formatCurrencyCompact } from "@/lib/dashboard/format";
 import { KpiCard } from "@/components/dashboard/kpi-card";
+import { AgentCardsSection } from "@/components/dashboard/agent-cards-section";
+import { GoalWidget } from "@/components/dashboard/goal-widget";
 
 interface Stat {
   name: string;
@@ -84,6 +86,9 @@ export default function DashboardPage() {
   }, [router]);
 
   const [kpis, setKpis] = useState<DashboardKpis | null>(null);
+  // Stage 3.6.3 Commit B — lifted to component state so AgentCardsSection +
+  // GoalWidget can read it. Resolved inside the data-fetch effect below.
+  const [orgId, setOrgId] = useState<string | null>(null);
   const [recentCalls, setRecentCalls] = useState<DashCall[]>([]);
   const [weekCalls, setWeekCalls] = useState<{ created_at: string; outcome: string | null }[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -158,6 +163,7 @@ export default function DashboardPage() {
         if (!orgId) {
           console.warn("[dashboard] Could not resolve org id (no __LF_ORG_ID__ and no profile); KPIs disabled");
         } else {
+          setOrgId(orgId);
           const k = await fetchDashboardKpis(supabase, orgId);
           setKpis(k);
         }
@@ -310,6 +316,14 @@ export default function DashboardPage() {
           sparkline={kpis?.sparklines.pipelineCreatedPerDay ?? []}
           sparklineColor="rgb(251 191 36)"
         />
+      </div>
+
+      {/* Live agents + weekly goals (Stage 3.6.3 Commit B) */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <AgentCardsSection orgId={orgId} />
+        </div>
+        <GoalWidget orgId={orgId} />
       </div>
 
       {/* Two Column Layout */}
