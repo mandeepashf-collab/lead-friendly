@@ -156,7 +156,7 @@ export async function proxy(request: NextRequest) {
   // async Supabase work, and Next.js snapshots forwarded headers at the
   // .next() call site. We emit the override headers manually at the end of
   // this function, just before `return res`. See vercel/next.js#39402.
-  const res = NextResponse.next()
+  const res = NextResponse.next({ request: { headers: requestHeaders } })
 
   // ── Set CORS header on API responses ──────────────────────────
   if (pathname.startsWith('/api/')) {
