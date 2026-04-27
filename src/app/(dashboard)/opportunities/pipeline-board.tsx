@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Plus, Trash2, Edit2, Eye, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { moveOpportunity, deleteOpportunity } from "@/hooks/use-opportunities";
+import { getStageTone, TONE_CLASSES } from "@/lib/pipeline/tones";
+import { StagePill } from "@/components/ui/stage-pill";
 import type { Opportunity } from "@/types/database";
 
 interface Stage {
@@ -30,26 +32,6 @@ interface Props {
   onEdit: (opp: Opportunity) => void;
   onDelete: (id: string) => void;
   refetch: () => void;
-}
-
-const STAGE_COLORS: Record<string, { border: string; bg: string }> = {
-  blue: { border: "border-blue-500", bg: "bg-blue-500/10" },
-  amber: { border: "border-amber-500", bg: "bg-amber-500/10" },
-  purple: { border: "border-purple-500", bg: "bg-purple-500/10" },
-  cyan: { border: "border-cyan-500", bg: "bg-cyan-500/10" },
-  green: { border: "border-green-500", bg: "bg-green-500/10" },
-  red: { border: "border-red-500", bg: "bg-red-500/10" },
-};
-
-function getStageColor(stageName: string): { border: string; bg: string } {
-  const name = stageName.toLowerCase();
-  if (name.includes("new")) return STAGE_COLORS.blue;
-  if (name.includes("qualified")) return STAGE_COLORS.amber;
-  if (name.includes("proposal")) return STAGE_COLORS.purple;
-  if (name.includes("negotiation")) return STAGE_COLORS.cyan;
-  if (name.includes("won")) return STAGE_COLORS.green;
-  if (name.includes("lost")) return STAGE_COLORS.red;
-  return STAGE_COLORS.blue;
 }
 
 function OpportunityCard({
@@ -167,30 +149,35 @@ export function PipelineBoard({ stages, onAdd, onEdit, onDelete, refetch }: Prop
     <div className="overflow-x-auto pb-4">
       <div className="inline-flex gap-4 min-w-full pr-4">
         {stages.map((stageData) => {
-          const colors = getStageColor(stageData.stage.name);
+          const tone = getStageTone(stageData.stage.name);
+          const classes = TONE_CLASSES[tone];
 
           return (
             <div key={stageData.stage.id} className="flex-shrink-0 w-96">
               {/* Column Header */}
               <div
                 className={cn(
-                  "rounded-t-lg border-x border-t border-zinc-800 bg-zinc-900 px-4 py-3",
-                  colors.border
+                  "rounded-t-lg border-x border-t px-4 py-3",
+                  classes.bg,
+                  classes.border
                 )}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <h3 className="font-semibold text-white text-sm">{stageData.stage.name}</h3>
-                    <p className="text-xs text-zinc-500 mt-1">
-                      {stageData.count} deal{stageData.count !== 1 ? "s" : ""} •{" "}
-                      {new Intl.NumberFormat("en-US", {
-                        style: "currency",
-                        currency: "USD",
-                        minimumFractionDigits: 0,
-                      }).format(stageData.totalValue)}
-                    </p>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={cn("inline-block h-1.5 w-1.5 rounded-full shrink-0", classes.dot)} />
+                    <div className="min-w-0">
+                      <StagePill tone={tone}>{stageData.stage.name}</StagePill>
+                      <p className="text-xs text-zinc-500 mt-1.5">
+                        {stageData.count} deal{stageData.count !== 1 ? "s" : ""} •{" "}
+                        {new Intl.NumberFormat("en-US", {
+                          style: "currency",
+                          currency: "USD",
+                          minimumFractionDigits: 0,
+                        }).format(stageData.totalValue)}
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-800 text-xs font-medium text-zinc-300">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-800 text-xs font-medium text-zinc-300 shrink-0">
                     {stageData.count}
                   </div>
                 </div>
@@ -199,8 +186,8 @@ export function PipelineBoard({ stages, onAdd, onEdit, onDelete, refetch }: Prop
               {/* Column Cards */}
               <div
                 className={cn(
-                  "rounded-b-lg border-x border-b border-zinc-800 bg-zinc-950 p-3 space-y-3 min-h-96",
-                  colors.border
+                  "rounded-b-lg border-x border-b bg-zinc-950 p-3 space-y-3 min-h-96",
+                  classes.border
                 )}
               >
                 {stageData.opportunities.length === 0 ? (
