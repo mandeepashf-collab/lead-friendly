@@ -77,7 +77,7 @@ function cleanupRateLimitStore() {
   }
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   cleanupRateLimitStore()
 
   const { pathname } = request.nextUrl
@@ -147,7 +147,16 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  const res = NextResponse.next({ request })
+  // Stage 3.3.6 — forward role/identity headers as REQUEST headers (visible to
+  // server components via headers()), not RESPONSE headers (browser-only).
+  const requestHeaders = new Headers(request.headers)
+
+  // Stage 3.3.6: construct `res` without forwarded request headers here —
+  // the role/identity/impersonation x-lf-* headers below get populated AFTER
+  // async Supabase work, and Next.js snapshots forwarded headers at the
+  // .next() call site. We emit the override headers manually at the end of
+  // this function, just before `return res`. See vercel/next.js#39402.
+  const res = NextResponse.next()
 
   // ── Set CORS header on API responses ──────────────────────────
   if (pathname.startsWith('/api/')) {
@@ -215,11 +224,11 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(new URL('/unknown-domain', request.url))
       }
 
-      res.headers.set('x-lf-org-id', org.id)
-      res.headers.set('x-brand-name', org.portal_name || 'CRM')
-      res.headers.set('x-brand-color', org.primary_color || '#6366f1')
-      res.headers.set('x-brand-logo', org.primary_logo_url || '')
-      res.headers.set('x-is-white-label', 'true')
+      requestHeaders.set('x-lf-org-id', org.id)
+      requestHeaders.set('x-brand-name', org.portal_name || 'CRM')
+      requestHeaders.set('x-brand-color', org.primary_color || '#6366f1')
+      requestHeaders.set('x-brand-logo', org.primary_logo_url || '')
+      requestHeaders.set('x-is-white-label', 'true')
     } else {
       // No matching organizations.custom_domain. Stage 3.1 dropped the legacy
       // sub_accounts table, so there's no fallback lookup — the only path to
@@ -293,9 +302,9 @@ export async function middleware(request: NextRequest) {
       return NextResponse.rewrite(new URL('/404', request.url))
     }
   }
-  res.headers.set('x-lf-user-is-agency-admin', isAgencyAdmin ? '1' : '0')
-  res.headers.set('x-lf-user-is-sub-account', isSubAccount ? '1' : '0')
-  res.headers.set('x-lf-platform-staff', isPlatformStaff ? '1' : '0')
+  requestHeaders.set('x-lf-user-is-agency-admin', isAgencyAdmin ? '1' : '0')
+  requestHeaders.set('x-lf-user-is-sub-account', isSubAccount ? '1' : '0')
+  requestHeaders.set('x-lf-platform-staff', isPlatformStaff ? '1' : '0')
 
   // ── Brand preview (Stage 3.4) ───────────────────────────────────────────
   // Agency admins can opt into seeing their own brand on platform hosts via
@@ -310,7 +319,7 @@ export async function middleware(request: NextRequest) {
     userOrgId &&
     request.cookies.get(BRAND_PREVIEW_COOKIE_NAME)?.value === '1'
   ) {
-    res.headers.set('x-lf-brand-preview-org-id', userOrgId)
+    requestHeaders.set('x-lf-brand-preview-org-id', userOrgId)
   }
 
   // ── Subscription gate (opt-in via SUBSCRIPTION_GATE_ENABLED) ────
@@ -390,19 +399,36 @@ export async function middleware(request: NextRequest) {
 
     if (sess) {
       // Valid session — inject context headers
-      res.headers.set('x-lf-impersonation-active', '1')
-      res.headers.set('x-lf-acting-as-org-id', sess.sub_organization_id)
-      res.headers.set('x-lf-actor-user-id', sess.actor_user_id)
-      res.headers.set('x-lf-impersonation-expires-at', sess.expires_at)
+      requestHeaders.set('x-lf-impersonation-active', '1')
+      requestHeaders.set('x-lf-acting-as-org-id', sess.sub_organization_id)
+      requestHeaders.set('x-lf-actor-user-id', sess.actor_user_id)
+      requestHeaders.set('x-lf-impersonation-expires-at', sess.expires_at)
       // Optional: passing org name + actor email saves a DB roundtrip in
       // the banner component. These are public-ish (already shown to the
       // agency admin who started the session).
-      if (sess.sub_org_name) res.headers.set('x-lf-acting-as-org-name', sess.sub_org_name)
-      if (sess.actor_email) res.headers.set('x-lf-actor-email', sess.actor_email)
+      if (sess.sub_org_name) requestHeaders.set('x-lf-acting-as-org-name', sess.sub_org_name)
+      if (sess.actor_email) requestHeaders.set('x-lf-actor-email', sess.actor_email)
     } else {
       // Token invalid/expired/ended — clear it so the next request is clean
       res.cookies.delete('lf_impersonation_token')
     }
+  }
+
+  // Stage 3.3.6: emit Next.js's middleware override headers manually so the
+  // x-lf-* mutations performed above (which depend on async Supabase work) are
+  // visible to server components via headers(). This is the same mechanism
+  // NextResponse.next({ request: { headers } }) uses internally; we defer it
+  // to here so it captures the fully-populated requestHeaders, not the snapshot
+  // at the .next() call site. See vercel/next.js#39402.
+  const overrideNames: string[] = []
+  for (const [name, value] of requestHeaders) {
+    if (request.headers.get(name) !== value) {
+      overrideNames.push(name)
+      res.headers.set(`x-middleware-request-${name}`, value)
+    }
+  }
+  if (overrideNames.length > 0) {
+    res.headers.set('x-middleware-override-headers', overrideNames.join(','))
   }
 
   return res
