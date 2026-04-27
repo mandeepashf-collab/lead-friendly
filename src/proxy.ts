@@ -151,7 +151,12 @@ export async function proxy(request: NextRequest) {
   // server components via headers()), not RESPONSE headers (browser-only).
   const requestHeaders = new Headers(request.headers)
 
-  const res = NextResponse.next({ request: { headers: requestHeaders } })
+  // Stage 3.3.6: construct `res` without forwarded request headers here —
+  // the role/identity/impersonation x-lf-* headers below get populated AFTER
+  // async Supabase work, and Next.js snapshots forwarded headers at the
+  // .next() call site. We emit the override headers manually at the end of
+  // this function, just before `return res`. See vercel/next.js#39402.
+  const res = NextResponse.next()
 
   // ── Set CORS header on API responses ──────────────────────────
   if (pathname.startsWith('/api/')) {
@@ -407,6 +412,23 @@ export async function proxy(request: NextRequest) {
       // Token invalid/expired/ended — clear it so the next request is clean
       res.cookies.delete('lf_impersonation_token')
     }
+  }
+
+  // Stage 3.3.6: emit Next.js's middleware override headers manually so the
+  // x-lf-* mutations performed above (which depend on async Supabase work) are
+  // visible to server components via headers(). This is the same mechanism
+  // NextResponse.next({ request: { headers } }) uses internally; we defer it
+  // to here so it captures the fully-populated requestHeaders, not the snapshot
+  // at the .next() call site. See vercel/next.js#39402.
+  const overrideNames: string[] = []
+  for (const [name, value] of requestHeaders) {
+    if (request.headers.get(name) !== value) {
+      overrideNames.push(name)
+      res.headers.set(`x-middleware-request-${name}`, value)
+    }
+  }
+  if (overrideNames.length > 0) {
+    res.headers.set('x-middleware-override-headers', overrideNames.join(','))
   }
 
   return res
