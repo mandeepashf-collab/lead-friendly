@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { EgressStatus } from "livekit-server-sdk";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createUserClient } from "@/lib/supabase/server";
 import { getRoomService } from "@/lib/livekit/server";
+import { getEgressClient } from "@/lib/livekit/egress";
 
 /**
  * POST /api/softphone/hangup
@@ -129,6 +131,28 @@ export async function POST(req: NextRequest) {
         })
         .eq("id", callId);
       return NextResponse.json({ ok: true });
+    }
+
+    // ── Stop active egresses BEFORE deleting the room ──────
+    // deleteRoom() kills active egress mid-flush, truncating the OGG tail
+    // by ~19s on rep-initiated hangups. Calling stopEgress() first lets
+    // LiveKit drain its buffer cleanly. The egress_ended webhook still
+    // finalizes recording_duration_seconds asynchronously, so we don't
+    // wait for completion here.
+    try {
+      const egressClient = getEgressClient();
+      const egresses = await egressClient.listEgress({ roomName });
+      for (const egress of egresses) {
+        if (
+          egress.status === EgressStatus.EGRESS_STARTING ||
+          egress.status === EgressStatus.EGRESS_ACTIVE
+        ) {
+          await egressClient.stopEgress(egress.egressId);
+        }
+      }
+    } catch (err) {
+      // Don't block hangup on egress cleanup failure — log and continue
+      console.error("[hangup] egress stop failed:", err);
     }
 
     // ── End the call by closing the entire room ─────────────
