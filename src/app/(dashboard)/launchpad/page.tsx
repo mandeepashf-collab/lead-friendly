@@ -87,7 +87,7 @@ export default function LaunchpadPage() {
             title: "Set your business hours",
             description: "Define when your AI agent should be active",
             icon: Clock,
-            href: "/settings",
+            href: "/business",
             buttonLabel: "Set Hours",
             isComplete: false,
           },

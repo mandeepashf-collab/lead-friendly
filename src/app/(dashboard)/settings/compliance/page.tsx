@@ -184,8 +184,8 @@ export default function CompliancePage() {
             label="National DNC Registry"
             value={
               policy?.dnc_check_enabled
-                ? "Enabled"
-                : "Not subscribed — enable before live outbound at scale"
+                ? "Federal SAN scrubbing active"
+                : "Internal DNC active. FTC SAN registry recommended for outbound at scale."
             }
           />
           <FederalRow

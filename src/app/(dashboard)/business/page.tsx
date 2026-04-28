@@ -363,8 +363,9 @@ function BusinessProfileTab() {
 /* ════════════════════════════════════════════════════════════════
    MAIN PAGE
    ════════════════════════════════════════════════════════════════ */
+// Pre-launch: Business Profile tab hidden — `business_profiles` table doesn't
+// yet exist, so saves silently fail. Re-enable once migration creates it.
 const TABS = [
-  { id: "profile",   label: "Business Profile" },
   { id: "branding",  label: "Branding" },
   { id: "reporting", label: "Reporting" },
 ] as const;
@@ -372,7 +373,7 @@ const TABS = [
 type TabId = (typeof TABS)[number]["id"];
 
 export default function BusinessPage() {
-  const [activeTab, setActiveTab] = useState<TabId>("profile");
+  const [activeTab, setActiveTab] = useState<TabId>("branding");
 
   return (
     <div className="space-y-6">
@@ -398,7 +399,6 @@ export default function BusinessPage() {
         ))}
       </div>
 
-      {activeTab === "profile"   && <BusinessProfileTab />}
       {activeTab === "branding"  && <BrandingTabWrapper />}
       {activeTab === "reporting" && <ReportingTab />}
     </div>

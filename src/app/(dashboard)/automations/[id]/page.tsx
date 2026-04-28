@@ -1,7 +1,7 @@
 "use client";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import { useWorkflow } from "@/hooks/use-workflows";
+import { WorkflowBuilder } from "../workflow-builder";
 
 export default function EditWorkflowPage() {
   const params = useParams();
@@ -17,21 +17,14 @@ export default function EditWorkflowPage() {
     </div>
   );
 
+  // WorkflowBuilder is a modal-style component. We render it directly with
+  // close/save both routing back to the list page. This swaps in the existing
+  // editor (used by the create flow) instead of the placeholder stub.
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <button onClick={() => router.push("/automations")} className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-white">
-          <ArrowLeft className="h-4 w-4" />Back
-        </button>
-        <div className="h-4 w-px bg-zinc-700" />
-        <h1 className="text-2xl font-bold text-white">Edit: {workflow.name}</h1>
-      </div>
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
-        <p className="text-sm text-zinc-400">Trigger: <span className="text-white">{workflow.trigger_type}</span></p>
-        <p className="text-sm text-zinc-400 mt-1">Steps: <span className="text-white">{Array.isArray(workflow.steps) ? workflow.steps.length : 0}</span></p>
-        <p className="text-sm text-zinc-400 mt-1">Status: <span className="text-white capitalize">{workflow.status}</span></p>
-        <p className="text-xs text-zinc-600 mt-4">Full edit UI coming in next update.</p>
-      </div>
-    </div>
+    <WorkflowBuilder
+      workflow={workflow}
+      onClose={() => router.push("/automations")}
+      onSaved={() => router.push("/automations")}
+    />
   );
 }

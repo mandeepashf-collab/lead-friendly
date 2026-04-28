@@ -82,7 +82,10 @@ const sections: SidebarSection[] = [
     label: 'White-label',
     agencyOnly: true,
     items: [
-      { label: 'Blueprints', href: '/agency/snapshots', icon: Copy },
+      // Pre-launch: Blueprints hidden — `agencies` table doesn't yet exist,
+      // so /agency/snapshots loads with a "No agency account found" error.
+      // Re-enable once agencies migration ships.
+      // { label: 'Blueprints', href: '/agency/snapshots', icon: Copy },
       { label: 'Workspaces', href: '/agency/dashboard', icon: Building },
       { label: 'Partner billing', href: '/agency/billing', icon: FileText },
     ],

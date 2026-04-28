@@ -5,6 +5,7 @@ import { X, Loader2, Calendar, Clock, User, FileText } from "lucide-react";
 import { createAppointment, updateAppointment } from "@/hooks/use-appointments";
 import { useContacts } from "@/hooks/use-contacts";
 import type { Appointment } from "@/types/database";
+import { localDateKey } from "@/lib/dashboard/format";
 
 interface Props {
   appointment: Appointment | null;
@@ -23,7 +24,7 @@ export function AppointmentDialog({ appointment, selectedDate, onClose, onSaved 
   const [form, setForm] = useState({
     title: appointment?.title || "",
     contact_id: appointment?.contact_id || "",
-    appointment_date: appointment?.appointment_date || selectedDate || new Date().toISOString().split('T')[0],
+    appointment_date: appointment?.appointment_date || selectedDate || localDateKey(),
     start_time: appointment?.start_time || "09:00",
     end_time: appointment?.end_time || "10:00",
     assigned_to: appointment?.assigned_to || "",

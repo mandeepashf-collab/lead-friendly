@@ -5,12 +5,10 @@ import { ArrowLeft, Save, Plus, X, Zap, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createWorkflow } from "@/hooks/use-workflows";
 
+// F19: Event-based triggers (contact_created, call_completed, etc.) have no
+// execution engine yet — see post-launch roadmap. Pre-launch we expose only
+// `manual` so users don't build workflows that silently never run.
 const TRIGGERS = [
-  { id: "contact_created", label: "Contact Created" },
-  { id: "call_completed", label: "Call Completed" },
-  { id: "appointment_booked", label: "Appointment Booked" },
-  { id: "tag_added", label: "Tag Added" },
-  { id: "form_submitted", label: "Form Submitted" },
   { id: "manual", label: "Manual Trigger" },
 ];
 
@@ -29,7 +27,7 @@ interface Step { id: string; type: string; config: Record<string, string> }
 export default function NewWorkflowPage() {
   const router = useRouter();
   const [name, setName] = useState("New Workflow");
-  const [trigger, setTrigger] = useState("contact_created");
+  const [trigger, setTrigger] = useState("manual");
   const [steps, setSteps] = useState<Step[]>([]);
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [saving, setSaving] = useState(false);
