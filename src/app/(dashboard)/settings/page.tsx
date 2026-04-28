@@ -1,30 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Settings, Building2, Users, Shield, ShieldCheck, Save, Eye, EyeOff, Zap, Plus, X, Loader2, ToggleLeft, ToggleRight, MessageSquare, Mail, Phone, Calendar, AlertCircle, Tag, Trash2, Palette } from "lucide-react";
-import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Settings, Building2, Users, Shield, Save, Eye, EyeOff, Zap, Plus, X, Loader2, ToggleLeft, ToggleRight, MessageSquare, Mail, Phone, Calendar, AlertCircle, Tag, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useBrand } from "@/contexts/BrandContext";
+import { SettingsTabs } from "@/components/settings/SettingsTabs";
 
 const TABS = ["organization", "team", "automations", "tags", "security"] as const;
 type Tab = typeof TABS[number];
-
-const TAB_LABELS: Record<Tab, string> = {
-  organization: "Organization",
-  team: "Team",
-  automations: "Automations",
-  tags: "Tags",
-  security: "Security",
-};
-
-const TAB_ICONS: Record<Tab, React.ElementType> = {
-  organization: Building2,
-  team: Users,
-  automations: Zap,
-  tags: Tag,
-  security: Shield,
-};
 
 function InputField({ label, value, onChange, type = "text", placeholder, hint }: {
   label: string; value: string; onChange: (v: string) => void;
@@ -583,7 +568,16 @@ function TagsTab() {
 }
 
 export default function SettingsPage() {
-  const [tab, setTab] = useState<Tab>("organization");
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  // Single source of truth for which panel is showing: the ?tab= query param.
+  // Falls back to "organization" when missing or unrecognized. This means
+  // /settings, /settings?tab=organization, and /settings?tab=anything-bogus
+  // all show Organization — same as the old default-state behavior.
+  const tabParam = searchParams.get("tab");
+  const tab: Tab = (TABS as readonly string[]).includes(tabParam ?? "")
+    ? (tabParam as Tab)
+    : "organization";
   const [orgName, setOrgName] = useState("");
   const [saved, setSaved] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -609,17 +603,24 @@ export default function SettingsPage() {
     });
   }, []);
 
-  // Jump to phone section if URL hash is #phone
+  // Jump to phone section if URL hash is #phone. The phone field lives on
+  // the Organization panel; if the user landed via #phone with a different
+  // tab in the URL, redirect them to the Organization panel first, then
+  // scroll. The default for /settings is Organization so just clear the
+  // ?tab= param.
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (window.location.hash === "#phone") {
-      setTab("organization");
+      if (tab !== "organization") {
+        router.replace("/settings#phone");
+        return;
+      }
       // Wait for tab render, then scroll
       setTimeout(() => {
         document.getElementById("your-phone")?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 100);
     }
-  }, []);
+  }, [tab, router]);
 
   const handleSave = () => {
     setSaved(true);
@@ -657,36 +658,11 @@ export default function SettingsPage() {
         <p className="text-zinc-400">Manage your organization and account settings</p>
       </div>
 
-      {/* Tab nav — horizontal scroll on narrow viewports so "Security" is never cut off */}
-      <div className="border-b border-zinc-800 -mx-2 px-2 overflow-x-auto scrollbar-none">
-        <div className="flex gap-1 min-w-max">
-          {TABS.map((t) => {
-            const Icon = TAB_ICONS[t];
-            return (
-              <button key={t} onClick={() => setTab(t)}
-                className={cn("flex items-center gap-2 px-4 pb-3 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap flex-shrink-0",
-                  tab === t ? "border-indigo-500 text-white" : "border-transparent text-zinc-500 hover:text-zinc-300")}>
-                <Icon className="h-4 w-4" />{TAB_LABELS[t]}
-              </button>
-            );
-          })}
-          {/* Compliance lives on its own route (/settings/compliance) so the
-              tab links out rather than switching an inline panel. Matches how
-              Branding and Billing are reached elsewhere in the app. */}
-          <Link
-            href="/settings/compliance"
-            className="flex items-center gap-2 px-4 pb-3 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap flex-shrink-0 border-transparent text-zinc-500 hover:text-zinc-300"
-          >
-            <ShieldCheck className="h-4 w-4" />Compliance
-          </Link>
-          <Link
-            href="/settings/branding"
-            className="flex items-center gap-2 px-4 pb-3 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap flex-shrink-0 border-transparent text-zinc-500 hover:text-zinc-300"
-          >
-            <Palette className="h-4 w-4" />Branding
-          </Link>
-        </div>
-      </div>
+      {/* Tab nav — rendered by shared SettingsTabs component so the same
+          strip appears on /settings, /settings/compliance, and
+          /settings/branding. Tabs that live as panels here use ?tab=, the
+          two route-based tabs (Compliance, Branding) link to their pages. */}
+      <SettingsTabs />
 
       {/* Organization */}
       {tab === "organization" && (
