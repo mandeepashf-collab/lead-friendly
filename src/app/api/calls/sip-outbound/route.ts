@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
     } catch {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
-    const { agentId, contactId, contactPhone: rawContactPhone, isTest } = body;
+    const { agentId, contactId, contactPhone: rawContactPhone, isTest, campaignId } = body;
     if (!agentId) {
       return NextResponse.json({ error: "agentId is required" }, { status: 400 });
     }
@@ -361,6 +361,7 @@ export async function POST(req: NextRequest) {
         organization_id: orgId,
         ai_agent_id: a.id,
         contact_id: c ? (c.id as string) : null,
+        campaign_id: campaignId ?? null,
         direction: "outbound",
         status: "initiated",
         call_type: "webrtc", // TODO: consider 'sip_outbound' after UI audit

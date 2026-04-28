@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { contactId, contactPhone, fromNumber, agentId, organizationId } = body;
+  const { contactId, contactPhone, fromNumber, agentId, organizationId, campaignId } = body;
 
   if (!contactPhone) {
     return NextResponse.json({ error: "contactPhone is required" }, { status: 400 });
@@ -133,6 +133,7 @@ export async function POST(request: NextRequest) {
     .insert({
       organization_id: orgId!,
       contact_id: contactId ?? null,
+      campaign_id: campaignId ?? null,
       direction: "outbound",
       status: "initiated",
       from_number: from,

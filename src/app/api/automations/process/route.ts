@@ -156,11 +156,17 @@ export async function POST(req: NextRequest) {
       }
 
       try {
-        const res = await fetch(`${appUrl}/api/calls/trigger`, {
+        // Repointed Apr 28 from /api/calls/trigger (deprecated) to
+        // /api/calls/agent. Both go via Telnyx-direct + /api/voice/answer
+        // for the AI conversation, but agent is the modern non-deprecated
+        // path. /api/calls/sip-outbound (LiveKit) requires user-cookie auth
+        // and the USE_LIVEKIT_SIP flag, so it can't be reached from a
+        // service-role processor without a separate refactor.
+        const res = await fetch(`${appUrl}/api/calls/agent`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            // Pass the service-role key so /api/calls/trigger can skip user
+            // Pass the service-role key so /api/calls/agent can skip user
             // auth (campaign runs from a webhook/cron, not a browser session).
             'x-campaign-launch-key': process.env.SUPABASE_SERVICE_ROLE_KEY || '',
           },
