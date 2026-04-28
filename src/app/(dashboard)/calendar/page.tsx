@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Plus, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppointments } from "@/hooks/use-appointments";
 import { AppointmentDialog } from "./appointment-dialog";
+import { CalcomCard } from "@/components/calendar/CalcomCard";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -137,6 +138,15 @@ export default function CalendarPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Calendar integrations */}
+      <div className="space-y-3">
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-sm font-semibold text-zinc-300">Integrations</h2>
+          <p className="text-xs text-zinc-500">Connect external calendars so AI agent bookings sync automatically.</p>
+        </div>
+        <CalcomCard />
       </div>
 
       {showCreate && (
