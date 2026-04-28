@@ -1,53 +1,15 @@
 'use client'
-'use client'
 
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
-import { Copy, ArrowLeft } from 'lucide-react'
+import {
+  Copy, Plus, Trash2, ArrowRight, Loader2, AlertCircle,
+  X, ChevronDown
+} from 'lucide-react'
 
-/**
- * Pre-launch stub for the Blueprints / Snapshots feature.
- *
- * The original 566-line page lives in git history. It depended on an
- * `agencies` table that doesn't yet exist, which caused every load to
- * surface a "No agency account found" error while still allowing the
- * form to open.
- *
- * Decision (Apr 28, post-launch backlog F25-followup): keep the route
- * reachable so direct navigation doesn't 404, but render a coming-soon
- * placeholder until the agency-account migration ships. The sidebar
- * link is also commented out in `src/components/layout/sidebar.tsx`.
- */
-export default function BlueprintsComingSoonPage() {
-  return (
-    <div className="mx-auto max-w-2xl px-6 py-16">
-      <Link
-        href="/dashboard"
-        className="mb-8 inline-flex items-center gap-1.5 text-sm text-zinc-400 hover:text-white"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to dashboard
-      </Link>
-
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8 text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-indigo-500/10">
-          <Copy className="h-6 w-6 text-indigo-400" />
-        </div>
-        <h1 className="mt-5 text-xl font-semibold text-white">
-          Blueprints — coming soon
-        </h1>
-        <p className="mx-auto mt-2 max-w-md text-sm text-zinc-400">
-          Save an agent + workflow + branding bundle as a snapshot and apply
-          it across new client accounts in one click. Available once agency
-          accounts ship.
-        </p>
-        <p className="mx-auto mt-3 max-w-md text-xs text-zinc-600">
-          Want early access? Let us know — we&apos;re prioritizing this for
-          customers running 3+ client workspaces.
-        </p>
-      </div>
-    </div>
-  )
-}
+// ── Types ────────────────────────────────────────────────────
+interface Snapshot {
   id: string
   name: string
   description: string | null
