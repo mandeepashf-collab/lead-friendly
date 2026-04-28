@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
-  Target, Plus, LayoutGrid, List, DollarSign, TrendingUp,
+  Target, Plus, DollarSign, TrendingUp,
   Megaphone, Play, Pause, Trash2, Users, PhoneCall, Calendar,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -11,6 +12,10 @@ import { useOpportunities, usePipelines } from "@/hooks/use-opportunities";
 import { useCampaigns, deleteCampaign, updateCampaign } from "@/hooks/use-campaigns";
 import { PipelineBoard } from "./pipeline-board";
 import { OpportunityDialog } from "./opportunity-dialog";
+import { PipelineViewToggle, parseViewFromSearchParams } from "@/components/pipeline/view-toggle";
+import { PipelineTable } from "@/components/pipeline/pipeline-table";
+import { PipelineTimeline } from "@/components/pipeline/pipeline-timeline";
+import { DealAIDrawer } from "@/components/pipeline/deal-ai-drawer";
 import type { Opportunity } from "@/types/database";
 import type { Campaign } from "@/types/database";
 
@@ -35,10 +40,12 @@ function CampaignStatusBadge({ status }: { status: string }) {
 
 /* ─── Opportunities Tab ─── */
 function OpportunitiesTab() {
-  const [view, setView] = useState<"board" | "list">("board");
+  const searchParams = useSearchParams();
+  const view = parseViewFromSearchParams(searchParams.get("view"));
   const [showCreate, setShowCreate] = useState(false);
   const [editOpp, setEditOpp] = useState<Opportunity | null>(null);
   const [selectedPipeline, setSelectedPipeline] = useState<string | undefined>();
+  const [aiDrawerDeal, setAiDrawerDeal] = useState<{ id: string; name: string } | null>(null);
 
   const { pipelines, loading: pipelinesLoading } = usePipelines();
   const activePipeline = selectedPipeline || pipelines[0]?.id;
@@ -53,16 +60,7 @@ function OpportunitiesTab() {
       {/* Actions row */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="flex items-center rounded-lg border border-zinc-800 bg-zinc-900 p-0.5">
-            <button onClick={() => setView("board")}
-              className={cn("rounded-md p-1.5 transition-colors", view === "board" ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-zinc-300")}>
-              <LayoutGrid className="h-4 w-4" />
-            </button>
-            <button onClick={() => setView("list")}
-              className={cn("rounded-md p-1.5 transition-colors", view === "list" ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-zinc-300")}>
-              <List className="h-4 w-4" />
-            </button>
-          </div>
+          <PipelineViewToggle current={view} />
           {pipelines.length > 0 && (
             <div className="flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-900 p-0.5">
               {pipelines.map((p) => (
@@ -113,43 +111,35 @@ function OpportunitiesTab() {
             <p className="text-xs mt-1">Please select a pipeline to view opportunities</p>
           </div>
         </div>
-      ) : view === "board" ? (
+      ) : view === "kanban" ? (
         <PipelineBoard
           stages={Object.values(groupedByStage)}
           onAdd={() => { setEditOpp(null); setShowCreate(true); }}
           onEdit={(opp) => { setEditOpp(opp); setShowCreate(true); }}
           onDelete={async (id) => { const { deleteOpportunity } = await import("@/hooks/use-opportunities"); await deleteOpportunity(id); refetch(); }}
+          onAiClick={(id, name) => setAiDrawerDeal({ id, name })}
           refetch={refetch}
         />
+      ) : view === "table" ? (
+        <PipelineTable
+          stages={Object.values(groupedByStage)}
+          onRowClick={(id) => {
+            const opp = opportunities.find((o) => o.id === id);
+            if (opp) { setEditOpp(opp); setShowCreate(true); }
+          }}
+          onAdd={() => { setEditOpp(null); setShowCreate(true); }}
+          onAiClick={(id, name) => setAiDrawerDeal({ id, name })}
+        />
       ) : (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 overflow-hidden">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-zinc-800">
-                {["Name", "Contact", "Value", "Stage", "Expected Close", "Assigned"].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-zinc-500">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800/50">
-              {opportunities.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-16 text-center text-zinc-600 text-sm">No opportunities</td></tr>
-              ) : opportunities.map((opp) => (
-                <tr key={opp.id} onClick={() => { setEditOpp(opp); setShowCreate(true); }}
-                  className="cursor-pointer hover:bg-zinc-800/30">
-                  <td className="px-4 py-3 text-sm font-medium text-white">{opp.name}</td>
-                  <td className="px-4 py-3 text-sm text-zinc-400">{opp.contact_id || "—"}</td>
-                  <td className="px-4 py-3 text-sm font-medium text-emerald-400">{fmtUSD(opp.value || 0)}</td>
-                  <td className="px-4 py-3 text-sm text-zinc-400">{opp.stage_id}</td>
-                  <td className="px-4 py-3 text-sm text-zinc-500">
-                    {opp.expected_close_date ? new Date(opp.expected_close_date).toLocaleDateString() : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-zinc-500">{opp.assigned_to || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <PipelineTimeline
+          stages={Object.values(groupedByStage)}
+          onEventClick={(id) => {
+            const opp = opportunities.find((o) => o.id === id);
+            if (opp) { setEditOpp(opp); setShowCreate(true); }
+          }}
+          onAdd={() => { setEditOpp(null); setShowCreate(true); }}
+          onAiClick={(id, name) => setAiDrawerDeal({ id, name })}
+        />
       )}
 
       {showCreate && (
@@ -160,6 +150,12 @@ function OpportunitiesTab() {
           onSaved={() => { setShowCreate(false); setEditOpp(null); refetch(); }}
         />
       )}
+
+      <DealAIDrawer
+        dealId={aiDrawerDeal?.id ?? null}
+        dealName={aiDrawerDeal?.name ?? null}
+        onClose={() => setAiDrawerDeal(null)}
+      />
     </div>
   );
 }

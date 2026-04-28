@@ -151,11 +151,7 @@ export async function proxy(request: NextRequest) {
   // server components via headers()), not RESPONSE headers (browser-only).
   const requestHeaders = new Headers(request.headers)
 
-  // Stage 3.3.6: construct `res` without forwarded request headers here —
-  // the role/identity/impersonation x-lf-* headers below get populated AFTER
-  // async Supabase work, and Next.js snapshots forwarded headers at the
-  // .next() call site. We emit the override headers manually at the end of
-  // this function, just before `return res`. See vercel/next.js#39402.
+  // Pass requestHeaders so route handlers receive forwarded Cookie + x-lf-* headers (Next.js 16 proxy convention).
   const res = NextResponse.next({ request: { headers: requestHeaders } })
 
   // ── Set CORS header on API responses ──────────────────────────
