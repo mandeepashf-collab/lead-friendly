@@ -4,18 +4,27 @@
  * Call sites: softphone manual dial, AI agent manual outbound, campaign launcher,
  *             workflow scheduled step, /automations retry scheduler.
  *
- * Hard blocks (federal rule - no override):
- *   - Quiet hours (default 08:00-21:00 in contact TZ)
- *   - DNC Registry (contacts.do_not_call = true OR federal list hit)
- *   - Max attempts ever (default 10)
+ * Hard blocks (no override possible — DNC violations or data-integrity failures):
+ *   - DNC Registry (when dnc_check_enabled)
+ *   - Internal DNC list (contacts.do_not_call = true)
+ *   - Stale DNC check
+ *   - Missing phone number
+ *   - Missing contact timezone
  *
- * Soft blocks (per-org editable, UI shows warning + requires override for manual paths):
+ * Soft warnings (rep can override with audit-logged informed consent):
+ *   - Quiet hours (default 08:00-21:00 contact-local)
+ *   - Sunday calling (when allow_sunday=false)
  *   - Daily cap per contact (default 3)
- *   - Sunday calling (default off)
- *   - Cooldown minutes between attempts (default 240 = 4h)
+ *   - Max attempts ever (default 10 lifetime)
+ *   - Cooldown between calls (default 240 minutes)
+ *   - Recent call to same contact
+ *
+ * Policy rationale: rep override with audit_logs trail creates documented
+ * informed consent — better legal posture than hard-block (which can be
+ * circumvented by deleting call records, leaving worse audit trail).
  *
  * For automated paths (campaign / workflow / scheduled retry), NO override is allowed -
- * soft blocks skip the contact and log; the caller is expected to treat `allowed=false`
+ * soft warnings skip the contact and log; the caller is expected to treat `allowed=false`
  * as "skip, don't retry".
  *
  * The evaluator is a PURE FUNCTION - no DB, no Date.now() sourced internally.
@@ -72,14 +81,14 @@ export type TcpaCheckResult =
     };
 
 export type HardReasonCode =
-  | "quiet_hours"
   | "dnc_listed"
   | "dnc_stale"
-  | "max_attempts_ever"
   | "missing_phone"
   | "missing_timezone";
 
 export type SoftWarningCode =
+  | "quiet_hours"
+  | "max_attempts_ever"
   | "daily_cap"
   | "sunday"
   | "cooldown"
@@ -128,6 +137,7 @@ function isInQuietHours(
 export function evaluateTcpa(input: TcpaCheckInput): TcpaCheckResult {
   const { policy, contact, now, initiatedBy } = input;
   const hard: HardReason[] = [];
+  const warnings: SoftWarning[] = [];
 
   if (!contact.phone) {
     hard.push({ code: "missing_phone", message: "Contact has no phone number." });
@@ -143,7 +153,7 @@ export function evaluateTcpa(input: TcpaCheckInput): TcpaCheckResult {
   if (contact.timezone) {
     const tzParts = getTzParts(now, contact.timezone);
     if (isInQuietHours(tzParts, policy.quiet_hours_start, policy.quiet_hours_end)) {
-      hard.push({
+      warnings.push({
         code: "quiet_hours",
         message: `Outside allowed calling hours (${policy.quiet_hours_start}-${policy.quiet_hours_end} ${contact.timezone}).`,
       });
@@ -177,17 +187,18 @@ export function evaluateTcpa(input: TcpaCheckInput): TcpaCheckResult {
   }
 
   if (contact.call_attempts >= policy.max_attempts_ever) {
-    hard.push({
+    warnings.push({
       code: "max_attempts_ever",
       message: `Maximum ${policy.max_attempts_ever} attempts reached for this contact.`,
     });
   }
 
   if (hard.length > 0) {
+    // Hard blocks short-circuit; any soft warnings accumulated above are dropped.
     return { allowed: false, severity: "hard", reasons: hard };
   }
 
-  const warnings: SoftWarning[] = [];
+  // Timezone is guaranteed present here — missing_timezone would have hard-blocked above.
   const tzParts = getTzParts(now, contact.timezone);
 
   if (contact.daily_attempts >= policy.daily_cap_per_contact) {

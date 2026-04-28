@@ -54,35 +54,7 @@ describe("evaluateTcpa - happy path", () => {
   });
 });
 
-describe("evaluateTcpa - hard blocks (federal)", () => {
-  it("blocks calls before 08:00 contact local time", () => {
-    const r = evaluateTcpa({
-      policy: defaultPolicy(),
-      contact: defaultContact(),
-      now: EARLY_MORNING_WEDNESDAY_UTC,
-      initiatedBy: "user",
-    });
-    expect(r.allowed).toBe(false);
-    if (!r.allowed) {
-      expect(r.severity).toBe("hard");
-      expect(r.reasons.some((x) => "code" in x && x.code === "quiet_hours")).toBe(true);
-    }
-  });
-
-  it("blocks calls after 21:00 contact local time", () => {
-    const r = evaluateTcpa({
-      policy: defaultPolicy(),
-      contact: defaultContact(),
-      now: LATE_NIGHT_TUESDAY_UTC,
-      initiatedBy: "user",
-    });
-    expect(r.allowed).toBe(false);
-    if (!r.allowed) {
-      expect(r.severity).toBe("hard");
-      expect(r.reasons.some((x) => "code" in x && x.code === "quiet_hours")).toBe(true);
-    }
-  });
-
+describe("evaluateTcpa - hard blocks (no override)", () => {
   it("blocks when contact.do_not_call is true", () => {
     const r = evaluateTcpa({
       policy: defaultPolicy(),
@@ -154,19 +126,6 @@ describe("evaluateTcpa - hard blocks (federal)", () => {
     expect(r.allowed).toBe(true);
   });
 
-  it("blocks when lifetime attempts reached max", () => {
-    const r = evaluateTcpa({
-      policy: defaultPolicy(),
-      contact: defaultContact({ call_attempts: 10 }),
-      now: NOON_WEDNESDAY_UTC,
-      initiatedBy: "user",
-    });
-    expect(r.allowed).toBe(false);
-    if (!r.allowed) {
-      expect(r.reasons.some((x) => "code" in x && x.code === "max_attempts_ever")).toBe(true);
-    }
-  });
-
   it("blocks when contact has no phone", () => {
     const r = evaluateTcpa({
       policy: defaultPolicy(),
@@ -195,6 +154,48 @@ describe("evaluateTcpa - hard blocks (federal)", () => {
 });
 
 describe("evaluateTcpa - soft blocks (org-editable)", () => {
+  it("soft warns before 08:00 contact local time", () => {
+    const r = evaluateTcpa({
+      policy: defaultPolicy(),
+      contact: defaultContact(),
+      now: EARLY_MORNING_WEDNESDAY_UTC,
+      initiatedBy: "user",
+    });
+    expect(r.allowed).toBe(true);
+    if (r.allowed && r.severity === "soft") {
+      expect(r.requiresOverride).toBe(true);
+      expect(r.warnings.some((w) => w.code === "quiet_hours")).toBe(true);
+    }
+  });
+
+  it("soft warns after 21:00 contact local time", () => {
+    const r = evaluateTcpa({
+      policy: defaultPolicy(),
+      contact: defaultContact(),
+      now: LATE_NIGHT_TUESDAY_UTC,
+      initiatedBy: "user",
+    });
+    expect(r.allowed).toBe(true);
+    if (r.allowed && r.severity === "soft") {
+      expect(r.requiresOverride).toBe(true);
+      expect(r.warnings.some((w) => w.code === "quiet_hours")).toBe(true);
+    }
+  });
+
+  it("soft warns when lifetime attempts reached max", () => {
+    const r = evaluateTcpa({
+      policy: defaultPolicy(),
+      contact: defaultContact({ call_attempts: 10 }),
+      now: NOON_WEDNESDAY_UTC,
+      initiatedBy: "user",
+    });
+    expect(r.allowed).toBe(true);
+    if (r.allowed && r.severity === "soft") {
+      expect(r.requiresOverride).toBe(true);
+      expect(r.warnings.some((w) => w.code === "max_attempts_ever")).toBe(true);
+    }
+  });
+
   it("warns and requires override when daily cap reached, initiated by user", () => {
     const r = evaluateTcpa({
       policy: defaultPolicy(),
@@ -299,23 +300,22 @@ describe("evaluateTcpa - soft blocks (org-editable)", () => {
 });
 
 describe("evaluateTcpa - precedence", () => {
-  it("returns all hard reasons when multiple federal blocks hit", () => {
+  it("returns all hard reasons when multiple hard blocks hit", () => {
     const r = evaluateTcpa({
-      policy: defaultPolicy(),
+      policy: defaultPolicy({ dnc_check_enabled: true }),
       contact: defaultContact({
         do_not_call: true,
-        call_attempts: 10,
+        dnc_checked_at: null,
       }),
-      now: LATE_NIGHT_TUESDAY_UTC,
+      now: NOON_WEDNESDAY_UTC,
       initiatedBy: "user",
     });
     expect(r.allowed).toBe(false);
     if (!r.allowed) {
       expect(r.severity).toBe("hard");
       const codes = r.reasons.map((x) => ("code" in x ? x.code : ""));
-      expect(codes).toContain("quiet_hours");
       expect(codes).toContain("dnc_listed");
-      expect(codes).toContain("max_attempts_ever");
+      expect(codes).toContain("dnc_stale");
     }
   });
 
@@ -379,7 +379,7 @@ describe("evaluateTcpa - timezone edge cases", () => {
 
   const MORNING_UTC = new Date("2026-04-23T13:00:00Z");
 
-  it("Eastern contact callable at 09:00 ET but Pacific contact blocked at 06:00 PT", () => {
+  it("Eastern contact callable at 09:00 ET; Pacific contact soft-warned at 06:00 PT", () => {
     const eastern = evaluateTcpa({
       policy: defaultPolicy(),
       contact: defaultContact({ timezone: "America/New_York" }),
@@ -394,9 +394,9 @@ describe("evaluateTcpa - timezone edge cases", () => {
       now: MORNING_UTC,
       initiatedBy: "user",
     });
-    expect(pacific.allowed).toBe(false);
-    if (!pacific.allowed) {
-      expect(pacific.reasons.some((x) => "code" in x && x.code === "quiet_hours")).toBe(true);
+    expect(pacific.allowed).toBe(true);
+    if (pacific.allowed && pacific.severity === "soft") {
+      expect(pacific.warnings.some((w) => w.code === "quiet_hours")).toBe(true);
     }
   });
 
@@ -420,14 +420,17 @@ describe("evaluateTcpa - timezone edge cases", () => {
     expect(r.allowed).toBe(true);
   });
 
-  it("Hawaii at 05:00 HST (15:00 UTC) is blocked - before 08:00", () => {
+  it("Hawaii at 05:00 HST (15:00 UTC) soft-warns - before 08:00", () => {
     const r = evaluateTcpa({
       policy: defaultPolicy(),
       contact: defaultContact({ timezone: "Pacific/Honolulu" }),
       now: new Date("2026-04-23T15:00:00Z"),
       initiatedBy: "user",
     });
-    expect(r.allowed).toBe(false);
+    expect(r.allowed).toBe(true);
+    if (r.allowed && r.severity === "soft") {
+      expect(r.warnings.some((w) => w.code === "quiet_hours")).toBe(true);
+    }
   });
 });
 
