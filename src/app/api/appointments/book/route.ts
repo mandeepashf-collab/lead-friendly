@@ -219,35 +219,44 @@ export async function POST(req: NextRequest) {
       const attendeeName = contact
         ? [contact.first_name, contact.last_name].filter(Boolean).join(" ").trim() || "Lead"
         : "Lead";
-      const attendeeEmail = (contact?.email as string | null) || "";
+      const realEmail = (contact?.email as string | null) || "";
       const attendeePhone = (contact?.phone as string | null) || undefined;
       const timezone = (org?.default_timezone as string | null) || "America/Los_Angeles";
 
-      // Cal.com requires an attendee email to send the confirmation. If we
-      // don't have one, skip the sync rather than booking a confirmation
-      // that goes nowhere.
-      if (attendeeEmail) {
-        const result = await bookCalcomMeeting({
-          apiKey: calcom.apiKey,
-          eventTypeId: calcom.eventTypeId,
-          start: buildCalcomStartISO(date, startTime, timezone),
-          attendeeName,
-          attendeeEmail,
-          attendeePhone,
-          attendeeTimezone: timezone,
-          notes: notes || undefined,
-        });
+      // Cold-call leads usually don't have an email but Cal.com requires one
+      // on the attendee. We synthesize a no-reply address tied to the
+      // contact's phone (or contact id, as a last resort) so the booking
+      // still lands on the user's connected calendar (Google/Outlook/Apple
+      // via Cal.com sync). The "confirmation email" Cal.com tries to send
+      // bounces — that's the trade-off, and it's the right one: getting
+      // the meeting on the user's calendar matters more than a confirmation
+      // the lead probably wouldn't read anyway.
+      const phoneDigits = (contact?.phone as string | null)?.replace(/\D/g, "") || "";
+      const attendeeEmail = realEmail
+        || (phoneDigits
+          ? `lead-${phoneDigits}@noreply.leadfriendly.com`
+          : `lead-${contactId}@noreply.leadfriendly.com`);
 
-        if (result.ok && result.uid) {
-          // Reuse the existing google_event_id column as a generic external
-          // event reference. Renaming would be a separate migration.
-          await supabase
-            .from("appointments")
-            .update({ google_event_id: result.uid })
-            .eq("id", appt.id);
-        } else if (!result.ok) {
-          console.error("[cal_com] booking sync failed:", result.error);
-        }
+      const result = await bookCalcomMeeting({
+        apiKey: calcom.apiKey,
+        eventTypeId: calcom.eventTypeId,
+        start: buildCalcomStartISO(date, startTime, timezone),
+        attendeeName,
+        attendeeEmail,
+        attendeePhone,
+        attendeeTimezone: timezone,
+        notes: notes || undefined,
+      });
+
+      if (result.ok && result.uid) {
+        // Reuse the existing google_event_id column as a generic external
+        // event reference. Renaming would be a separate migration.
+        await supabase
+          .from("appointments")
+          .update({ google_event_id: result.uid })
+          .eq("id", appt.id);
+      } else if (!result.ok) {
+        console.error("[cal_com] booking sync failed:", result.error);
       }
     }
   } catch (err) {
