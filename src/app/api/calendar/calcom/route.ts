@@ -69,9 +69,10 @@ export async function POST(req: NextRequest) {
   // Validate the key actually works before saving — better UX than silent
   // booking failures later.
   const valid = await validateCalcomApiKey(apiKey)
-  if (!valid) {
+  if (!valid.ok) {
+    console.error('[cal_com] validation failed:', valid.error)
     return NextResponse.json(
-      { error: 'Cal.com rejected the API key. Double-check the key and try again.' },
+      { error: valid.error || 'Cal.com rejected the API key. Double-check the key and try again.' },
       { status: 400 },
     )
   }
