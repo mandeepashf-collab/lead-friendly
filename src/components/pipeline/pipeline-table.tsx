@@ -33,9 +33,10 @@ interface Props {
   stages: StageBucket[];
   onRowClick: (id: string) => void;
   onAdd: () => void;
+  onAiClick: (id: string, name: string) => void;
 }
 
-export function PipelineTable({ stages, onRowClick, onAdd }: Props) {
+export function PipelineTable({ stages, onRowClick, onAdd, onAiClick }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>("value");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -138,7 +139,7 @@ export function PipelineTable({ stages, onRowClick, onAdd }: Props) {
               <td className="px-4 py-3 text-zinc-400">{deal.ownerName || "—"}</td>
               <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                 <button
-                  onClick={() => console.log("AI drawer placeholder for deal", deal.id)}
+                  onClick={() => onAiClick(deal.id, deal.name)}
                   className="inline-flex items-center justify-center w-7 h-7 rounded text-[var(--amber-ai)] hover:bg-[var(--violet-bg)] transition-colors"
                   aria-label="AI insights"
                 >

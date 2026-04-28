@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { Sparkles } from "lucide-react";
 import { StagePill } from "@/components/ui/stage-pill";
 import { getStageTone, TONE_CLASSES } from "@/lib/pipeline/tones";
 import type { Opportunity } from "@/types/database";
@@ -27,9 +28,10 @@ interface Props {
   stages: StageBucket[];
   onEventClick: (id: string) => void;
   onAdd?: () => void;
+  onAiClick?: (id: string, name: string) => void;
 }
 
-export function PipelineTimeline({ stages, onEventClick, onAdd }: Props) {
+export function PipelineTimeline({ stages, onEventClick, onAdd, onAiClick }: Props) {
   const events = useMemo<TimelineDeal[]>(() => {
     const flat: TimelineDeal[] = [];
     for (const bucket of stages) {
@@ -130,10 +132,22 @@ export function PipelineTimeline({ stages, onEventClick, onAdd }: Props) {
                         <span className="text-sm tabular-nums text-zinc-300">
                           ${deal.value.toLocaleString()}
                         </span>
-                        <span className="text-xs text-zinc-500">
+                        <span className="text-xs text-zinc-500 flex-1">
                           created
                           {deal.contactName ? ` · ${deal.contactName}` : ""}
                         </span>
+                        {onAiClick && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onAiClick(deal.id, deal.name);
+                            }}
+                            className="inline-flex items-center justify-center w-7 h-7 rounded text-[var(--amber-ai)] hover:bg-[var(--violet-bg)] transition-colors"
+                            aria-label="AI insights"
+                          >
+                            <Sparkles className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
                     </li>
                   );

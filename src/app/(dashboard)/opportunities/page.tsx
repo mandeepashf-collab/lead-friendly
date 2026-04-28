@@ -15,6 +15,7 @@ import { OpportunityDialog } from "./opportunity-dialog";
 import { PipelineViewToggle, parseViewFromSearchParams } from "@/components/pipeline/view-toggle";
 import { PipelineTable } from "@/components/pipeline/pipeline-table";
 import { PipelineTimeline } from "@/components/pipeline/pipeline-timeline";
+import { DealAIDrawer } from "@/components/pipeline/deal-ai-drawer";
 import type { Opportunity } from "@/types/database";
 import type { Campaign } from "@/types/database";
 
@@ -44,6 +45,7 @@ function OpportunitiesTab() {
   const [showCreate, setShowCreate] = useState(false);
   const [editOpp, setEditOpp] = useState<Opportunity | null>(null);
   const [selectedPipeline, setSelectedPipeline] = useState<string | undefined>();
+  const [aiDrawerDeal, setAiDrawerDeal] = useState<{ id: string; name: string } | null>(null);
 
   const { pipelines, loading: pipelinesLoading } = usePipelines();
   const activePipeline = selectedPipeline || pipelines[0]?.id;
@@ -115,6 +117,7 @@ function OpportunitiesTab() {
           onAdd={() => { setEditOpp(null); setShowCreate(true); }}
           onEdit={(opp) => { setEditOpp(opp); setShowCreate(true); }}
           onDelete={async (id) => { const { deleteOpportunity } = await import("@/hooks/use-opportunities"); await deleteOpportunity(id); refetch(); }}
+          onAiClick={(id, name) => setAiDrawerDeal({ id, name })}
           refetch={refetch}
         />
       ) : view === "table" ? (
@@ -125,6 +128,7 @@ function OpportunitiesTab() {
             if (opp) { setEditOpp(opp); setShowCreate(true); }
           }}
           onAdd={() => { setEditOpp(null); setShowCreate(true); }}
+          onAiClick={(id, name) => setAiDrawerDeal({ id, name })}
         />
       ) : (
         <PipelineTimeline
@@ -134,6 +138,7 @@ function OpportunitiesTab() {
             if (opp) { setEditOpp(opp); setShowCreate(true); }
           }}
           onAdd={() => { setEditOpp(null); setShowCreate(true); }}
+          onAiClick={(id, name) => setAiDrawerDeal({ id, name })}
         />
       )}
 
@@ -145,6 +150,12 @@ function OpportunitiesTab() {
           onSaved={() => { setShowCreate(false); setEditOpp(null); refetch(); }}
         />
       )}
+
+      <DealAIDrawer
+        dealId={aiDrawerDeal?.id ?? null}
+        dealName={aiDrawerDeal?.name ?? null}
+        onClose={() => setAiDrawerDeal(null)}
+      />
     </div>
   );
 }

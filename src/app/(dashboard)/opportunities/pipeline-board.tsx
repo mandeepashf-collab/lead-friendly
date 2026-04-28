@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Trash2, Edit2, Eye, ChevronDown } from "lucide-react";
+import { Plus, Trash2, Edit2, Eye, ChevronDown, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { moveOpportunity, deleteOpportunity } from "@/hooks/use-opportunities";
 import { getStageTone, TONE_CLASSES } from "@/lib/pipeline/tones";
@@ -31,6 +31,7 @@ interface Props {
   onAdd: () => void;
   onEdit: (opp: Opportunity) => void;
   onDelete: (id: string) => void;
+  onAiClick?: (id: string, name: string) => void;
   refetch: () => void;
 }
 
@@ -40,6 +41,7 @@ function OpportunityCard({
   onEdit,
   onDelete,
   onMove,
+  onAiClick,
   stages,
 }: {
   opportunity: Opportunity & {
@@ -51,6 +53,7 @@ function OpportunityCard({
   onEdit: (opp: Opportunity) => void;
   onDelete: (id: string) => void;
   onMove: (id: string, newStageId: string) => void;
+  onAiClick?: (id: string, name: string) => void;
   stages: Stage[];
 }) {
   const [showMoveMenu, setShowMoveMenu] = useState(false);
@@ -70,21 +73,36 @@ function OpportunityCard({
       {/* Header */}
       <div className="flex items-start justify-between gap-2 mb-3">
         <h3 className="font-medium text-white text-sm flex-1 line-clamp-2">{opportunity.name}</h3>
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
-            onClick={() => onEdit(opportunity)}
-            className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-white"
-            title="Edit"
-          >
-            <Edit2 className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={() => onDelete(opportunity.id)}
-            className="rounded p-1 text-zinc-500 hover:bg-red-500/10 hover:text-red-400"
-            title="Delete"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+        <div className="flex items-center gap-1">
+          {onAiClick && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onAiClick(opportunity.id, opportunity.name);
+              }}
+              className="rounded p-1 text-[var(--amber-ai)] hover:bg-[var(--violet-bg)] transition-colors"
+              title="AI insights"
+              aria-label="AI insights"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={() => onEdit(opportunity)}
+              className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-white"
+              title="Edit"
+            >
+              <Edit2 className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => onDelete(opportunity.id)}
+              className="rounded p-1 text-zinc-500 hover:bg-red-500/10 hover:text-red-400"
+              title="Delete"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -130,7 +148,7 @@ function OpportunityCard({
   );
 }
 
-export function PipelineBoard({ stages, onAdd, onEdit, onDelete, refetch }: Props) {
+export function PipelineBoard({ stages, onAdd, onEdit, onDelete, onAiClick, refetch }: Props) {
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this opportunity? This action cannot be undone.")) return;
     await deleteOpportunity(id);
@@ -203,6 +221,7 @@ export function PipelineBoard({ stages, onAdd, onEdit, onDelete, refetch }: Prop
                       onEdit={onEdit}
                       onDelete={handleDelete}
                       onMove={handleMove}
+                      onAiClick={onAiClick}
                       stages={allStages}
                     />
                   ))
