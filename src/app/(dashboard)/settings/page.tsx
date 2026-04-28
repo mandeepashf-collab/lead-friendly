@@ -1,20 +1,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Settings, Building2, Users, Key, Bell, Shield, ShieldCheck, Save, Eye, EyeOff, Zap, Plus, X, Loader2, ToggleLeft, ToggleRight, MessageSquare, Mail, Phone, Calendar, AlertCircle, Tag, Trash2, Palette } from "lucide-react";
+import { Settings, Building2, Users, Shield, ShieldCheck, Save, Eye, EyeOff, Zap, Plus, X, Loader2, ToggleLeft, ToggleRight, MessageSquare, Mail, Phone, Calendar, AlertCircle, Tag, Trash2, Palette } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useBrand } from "@/contexts/BrandContext";
 
-const TABS = ["organization", "team", "integrations", "notifications", "automations", "tags", "security"] as const;
+const TABS = ["organization", "team", "automations", "tags", "security"] as const;
 type Tab = typeof TABS[number];
 
 const TAB_LABELS: Record<Tab, string> = {
   organization: "Organization",
   team: "Team",
-  integrations: "Integrations",
-  notifications: "Notifications",
   automations: "Automations",
   tags: "Tags",
   security: "Security",
@@ -23,8 +21,6 @@ const TAB_LABELS: Record<Tab, string> = {
 const TAB_ICONS: Record<Tab, React.ElementType> = {
   organization: Building2,
   team: Users,
-  integrations: Key,
-  notifications: Bell,
   automations: Zap,
   tags: Tag,
   security: Shield,
@@ -746,78 +742,6 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* Integrations */}
-      {tab === "integrations" && (
-        <div className="space-y-6 max-w-2xl">
-
-          {/* Voice & AI — native, no keys needed */}
-          <div>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">Voice & AI — Built In</h2>
-            <div className="space-y-3">
-              {[
-                { name: "Telnyx", desc: `Phone numbers, outbound calling & SMS — powered by ${brand.brandName}`, status: "Active" },
-                { name: "ElevenLabs", desc: "Human-quality AI voice synthesis — built into every AI Agent", status: "Active" },
-                { name: "Deepgram", desc: "Real-time speech-to-text transcription on every call", status: "Active" },
-              ].map((s) => (
-                <div key={s.name} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/50 px-5 py-4">
-                  <div>
-                    <p className="text-sm font-semibold text-white">{s.name}</p>
-                    <p className="text-xs text-zinc-500 mt-0.5">{s.desc}</p>
-                  </div>
-                  <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-400">
-                    ✓ {s.status}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Calendar Integrations */}
-          <div>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">Calendar</h2>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/50 px-5 py-4">
-                <div>
-                  <p className="text-sm font-semibold text-white">Google Calendar</p>
-                  <p className="text-xs text-zinc-500 mt-0.5">Two-way sync — AI agents book directly into your Google Calendar</p>
-                </div>
-                <button className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">
-                  Connect
-                </button>
-              </div>
-              <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/50 px-5 py-4">
-                <div>
-                  <p className="text-sm font-semibold text-white">Outlook / Microsoft 365</p>
-                  <p className="text-xs text-zinc-500 mt-0.5">Sync appointments with your Microsoft calendar</p>
-                </div>
-                <button className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">
-                  Connect
-                </button>
-              </div>
-              <Section title="Cal.com" description="Paste your Cal.com API key to sync bookings">
-                <div className="grid grid-cols-2 gap-3">
-                  <InputField label="Cal.com API Key" value="" onChange={() => {}} type="password" placeholder="cal_live_..." />
-                  <InputField label="Event Type ID" value="" onChange={() => {}} placeholder="123456" />
-                </div>
-                <button className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-                  <Save className="h-4 w-4" />Save Cal.com
-                </button>
-              </Section>
-            </div>
-          </div>
-
-          {/* CRM & Webhooks */}
-          <div>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">CRM & Webhooks</h2>
-            <Section title="Webhook URL" description="Receive real-time call events and outcomes to your own endpoint">
-              <InputField label="Endpoint URL" value="" onChange={() => {}} placeholder="https://yourdomain.com/webhook" />
-              <button className="text-xs text-indigo-400 hover:text-indigo-300">Send test event →</button>
-            </Section>
-          </div>
-
-        </div>
-      )}
-
       {/* Team */}
       {tab === "team" && (
         <div className="max-w-2xl">
@@ -849,33 +773,6 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* Notifications */}
-      {tab === "notifications" && (
-        <div className="max-w-2xl">
-          <Section title="Notification Preferences" description="Choose what you want to be notified about">
-            <div className="space-y-3">
-              {[
-                { label: "New inbound call", desc: "Get notified when a contact calls" },
-                { label: "Appointment booked", desc: "When an AI agent books an appointment" },
-                { label: "Call completed", desc: "Summary after each call" },
-                { label: "Campaign finished", desc: "When a campaign completes all contacts" },
-                { label: "Payment received", desc: "When an invoice is paid" },
-              ].map((n) => (
-                <div key={n.label} className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-zinc-300">{n.label}</p>
-                    <p className="text-xs text-zinc-600">{n.desc}</p>
-                  </div>
-                  <button className="relative h-5 w-9 rounded-full bg-indigo-600 transition-colors focus:outline-none">
-                    <span className="absolute right-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </Section>
-        </div>
-      )}
-
       {/* Automations */}
       {tab === "automations" && <AutomationsTab />}
 
@@ -893,15 +790,6 @@ export default function SettingsPage() {
             <button className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
               <Save className="h-4 w-4" />Update Password
             </button>
-          </Section>
-          <Section title="Two-Factor Authentication" description="Add extra security to your account">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-zinc-300">Authenticator app</p>
-                <p className="text-xs text-zinc-600">Use an app like Google Authenticator</p>
-              </div>
-              <button className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800">Enable</button>
-            </div>
           </Section>
         </div>
       )}

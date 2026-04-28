@@ -82,6 +82,10 @@ export function Softphone() {
   const [expanded, setExpanded] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isPrimaryTab, setIsPrimaryTab] = useState(true);
+  // F2: when softphone is open in another tab, the duplicate-tab advisory
+  // toast appears on every page. Users complained that it has no dismiss.
+  // Per-tab session state — re-shows on next page load if still secondary.
+  const [secondaryToastDismissed, setSecondaryToastDismissed] = useState(false);
 
   // Current-call state
   const [activeContact, setActiveContact] = useState<SoftphoneContact | null>(
@@ -669,14 +673,28 @@ export function Softphone() {
 
   // ── Render ──────────────────────────────────────────────────
 
-  // Duplicate-tab guard: show a minimal advisory instead of a functional dock
+  // Duplicate-tab guard: show a minimal advisory instead of a functional dock.
+  // F2 fix: advisory now has a dismiss (X) button — once dismissed, no UI
+  // appears in this tab until the page reloads. Closing/dismissing here does
+  // not affect the primary tab.
   if (!isPrimaryTab) {
+    if (secondaryToastDismissed) return null;
     return (
       <div
-        className="fixed z-50 max-w-xs rounded-lg border border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-lg"
+        className="fixed z-50 flex max-w-xs items-start gap-3 rounded-lg border border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-lg"
         style={positionStyle}
       >
-        Softphone is open in another tab. Switch to that tab to place calls.
+        <span className="flex-1">
+          Softphone is open in another tab. Switch to that tab to place calls.
+        </span>
+        <button
+          type="button"
+          onClick={() => setSecondaryToastDismissed(true)}
+          aria-label="Dismiss"
+          className="-mr-1 -mt-1 rounded p-0.5 text-amber-700 hover:bg-amber-100 hover:text-amber-900"
+        >
+          <X className="h-4 w-4" />
+        </button>
       </div>
     );
   }
