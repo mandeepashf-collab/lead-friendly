@@ -95,7 +95,16 @@ const sections: SidebarSection[] = [
 export function Sidebar() {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
-  const { isAgencyAdmin } = useBrand()
+  const { isAgencyAdmin, isBrandPreview, isSubAccount } = useBrand()
+
+  // Hide agency-admin features when:
+  //  - Logged-in user is a sub-account user on a white-labeled instance
+  //    (they should never see the words "Workspaces", "Partner billing",
+  //    or "Business" — that gives away the white-label and leaks our
+  //    agency UX into their portal experience).
+  //  - An agency admin has opted into brand preview mode to see what
+  //    their sub-account customers see.
+  const hideAgencyFeatures = isBrandPreview || isSubAccount
 
   const isActive = (item: SidebarItem) => {
     if (item.matchPaths) {
@@ -177,13 +186,15 @@ export function Sidebar() {
 
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
         {sections.map((section, idx) => {
-          if (section.agencyOnly && !isAgencyAdmin) return null
+          if (section.agencyOnly && (!isAgencyAdmin || hideAgencyFeatures)) return null
           const isWhiteLabel = section.label === 'White-label'
 
           return (
             <div key={section.label ?? `top-${idx}`}>
               {section.label && renderSectionLabel(section.label, isWhiteLabel)}
-              {section.items.map(renderItem)}
+              {section.items
+                .filter((item) => !(hideAgencyFeatures && item.href === '/business'))
+                .map(renderItem)}
 
               {isWhiteLabel && !collapsed && (
                 <Link
