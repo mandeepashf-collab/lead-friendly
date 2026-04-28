@@ -15,6 +15,7 @@ import {
 import { BrandingPreview } from './BrandingPreview'
 import CustomDomainManager from '@/components/agency/CustomDomainManager'
 import { BrandPreviewToggle } from '@/components/branding/BrandPreviewToggle'
+import { SettingsTabs } from '@/components/settings/SettingsTabs'
 import {
   BRANDING_UPLOAD_ACCEPT_ATTR,
   BRANDING_UPLOAD_MAX_LABEL,
@@ -389,10 +390,17 @@ export function BrandingClient({ orgId, initialBrand }: Props) {
   }, [saveState])
 
   return (
-    <div className="mx-auto max-w-7xl p-6">
-      <header className="mb-6 flex items-start justify-between gap-4">
+    <div className="mx-auto max-w-7xl p-6 space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-white">Settings</h1>
+        <p className="text-zinc-400">Manage your organization and account settings</p>
+      </div>
+
+      <SettingsTabs />
+
+      <header className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-zinc-100">Branding</h1>
+          <h2 className="text-xl font-semibold text-zinc-100">Branding</h2>
           <p className="mt-1 text-sm text-zinc-500">
             Customize your portal&apos;s look, domain, and support info. Changes apply to everyone in your organization.
           </p>

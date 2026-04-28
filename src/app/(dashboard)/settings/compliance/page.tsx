@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/lib/toast";
+import { SettingsTabs } from "@/components/settings/SettingsTabs";
 
 type Policy = {
   organization_id: string;
@@ -155,9 +156,16 @@ export default function CompliancePage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 p-6">
+    <div className="mx-auto max-w-3xl space-y-6 p-6">
       <div>
-        <h1 className="text-xl font-semibold text-zinc-100">Compliance</h1>
+        <h1 className="text-2xl font-bold text-white">Settings</h1>
+        <p className="text-zinc-400">Manage your organization and account settings</p>
+      </div>
+
+      <SettingsTabs />
+
+      <div>
+        <h2 className="text-xl font-semibold text-zinc-100">Compliance</h2>
         <p className="mt-1 text-sm text-zinc-400">
           TCPA and federal calling rules for your organization. Time-of-day
           checks use the <em>contact&apos;s</em> timezone — so calling a New York
