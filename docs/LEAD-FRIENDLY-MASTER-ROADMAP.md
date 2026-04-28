@@ -1,5 +1,4 @@
 # LEAD FRIENDLY — MASTER ROADMAP
-
 **Goal:** Build a product that is better, simpler, and cheaper than GoHighLevel for one specific buyer — small businesses and agencies that want AI voice + SMS follow-up without the 40-menu maze. Ship a functional version in 4 weeks, get first 10 paying customers, then compound.
 
 **Our edge vs GHL:** GHL is a bloated all-in-one that takes weeks to learn. We win by being the "AI caller + follow-up that just works out of the box in 10 minutes." We do fewer things, but each one is clean, fast, and built around AI, not bolted on.
@@ -14,10 +13,10 @@ The goal here is not "feature parity." The goal is "a business owner signs up, g
 
 ### Week 1 — Lock the core loop
 
-Core loop that must work end-to-end before anything else:
-**Upload contacts → Create AI agent in 3 steps → Launch campaign → Calls go out → Transcripts + outcomes saved → Dashboard shows results.**
+Core loop that must work end-to-end before anything else: **Upload contacts → Create AI agent in 3 steps → Launch campaign → Calls go out → Transcripts + outcomes saved → Dashboard shows results.**
 
 Tasks:
+
 1. **Fix all existing bugs from Day 1–2.** Deploy latest voice pipeline (answer + gather routes already rewritten). Test 20 real outbound calls. Verify Polly TTS audio plays, Claude responds naturally, transcripts save, hangup triggers properly.
 2. **Simplify agent creation to 3 fields only.** Right now there are too many. For MVP: Agent name + Business description + Goal (book meeting / qualify lead / follow up). The AI generates everything else behind the scenes. Advanced tab stays but is hidden by default.
 3. **Campaign launch reliability.** The `campaign_launch` handler in `/api/automations/process` needs proper queuing — right now it loops with a 1-second delay which will break on 100+ contacts. Move to a background job pattern (either Vercel cron hitting a processor, or Supabase edge function).

@@ -36,12 +36,11 @@ interface Props {
   onSaved: () => void;
 }
 
+// F19: Event-based triggers have no execution engine yet — see post-launch
+// roadmap. Pre-launch we expose only `manual` so users don't build workflows
+// that silently never run. Existing rows with other trigger_type values still
+// load fine (the UI just falls back to displaying the stored value).
 const TRIGGER_OPTIONS = [
-  { value: "contact_created", label: "Contact Created" },
-  { value: "contact_status_changed", label: "Contact Status Changed" },
-  { value: "call_completed", label: "Call Completed" },
-  { value: "appointment_booked", label: "Appointment Booked" },
-  { value: "form_submitted", label: "Form Submitted" },
   { value: "manual", label: "Manual" },
 ];
 
@@ -320,7 +319,17 @@ export function WorkflowBuilder({ workflow, onClose, onSaved }: Props) {
                   {t.label}
                 </option>
               ))}
+              {/* Render legacy trigger value as a disabled fallback so editing
+                  an old workflow doesn't silently change its trigger. */}
+              {!TRIGGER_OPTIONS.some((t) => t.value === triggerType) && triggerType && (
+                <option value={triggerType} disabled>
+                  {triggerType} (legacy — switch to Manual)
+                </option>
+              )}
             </select>
+            <p className="mt-1 text-[11px] text-zinc-500">
+              Event-based triggers (Contact Created, Call Completed, etc.) coming soon. Workflows currently run on manual trigger only.
+            </p>
           </div>
 
           {/* Steps */}

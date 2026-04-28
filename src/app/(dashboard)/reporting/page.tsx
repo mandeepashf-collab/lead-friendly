@@ -7,6 +7,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, AreaChart, Area, CartesianGrid,
 } from "recharts";
+import { localDateKey } from "@/lib/dashboard/format";
 
 interface Stats {
   totalContacts: number;
@@ -100,7 +101,8 @@ export default function ReportingPage() {
   const volumeByDay = useMemo(() => {
     const map: Record<string, { date: string; calls: number; answered: number; appointments: number }> = {};
     for (const c of callRows) {
-      const day = c.created_at.slice(0, 10);
+      // F12 fix: bucket by local day, not UTC.
+      const day = localDateKey(c.created_at);
       if (!map[day]) map[day] = { date: day, calls: 0, answered: 0, appointments: 0 };
       map[day].calls++;
       if (c.status === "completed" || c.status === "answered") map[day].answered++;

@@ -18,7 +18,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
 import { fetchDashboardKpis, type DashboardKpis } from "@/lib/dashboard/queries";
-import { formatStatusDate, formatCurrencyCompact } from "@/lib/dashboard/format";
+import { formatStatusDate, formatCurrencyCompact, localDateKey } from "@/lib/dashboard/format";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { AgentCardsSection } from "@/components/dashboard/agent-cards-section";
 import { GoalWidget } from "@/components/dashboard/goal-widget";
@@ -99,6 +99,10 @@ export default function DashboardPage() {
   const [setupComplete, setSetupComplete] = useState(0);
   const [totalSteps, setTotalSteps] = useState(7);
   const [bannerDismissed, setBannerDismissed] = useState(true);
+  // F1 fix: gate date-rendering on mount so SSR (UTC) and CSR (local) don't
+  // produce a hydration mismatch (React #418) when the day differs.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     async function fetchDashboardData() {
@@ -232,7 +236,10 @@ export default function DashboardPage() {
   const chartData = useMemo(() => {
     const map: Record<string, { day: string; calls: number; booked: number }> = {};
     for (const c of weekCalls) {
-      const day = c.created_at.slice(0, 10);
+      // F12 fix: bucket by user-local day, not UTC. Otherwise evening Pacific
+      // calls land in tomorrow's bucket and the rightmost bar shows the
+      // wrong date.
+      const day = localDateKey(c.created_at);
       if (!map[day]) map[day] = { day, calls: 0, booked: 0 };
       map[day].calls++;
       if (c.outcome === "appointment_booked") map[day].booked++;
@@ -264,7 +271,7 @@ export default function DashboardPage() {
 
       {/* Slim status header (Stage 3.6.3) */}
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm text-zinc-400">
-        <span className="font-medium text-zinc-200">{formatStatusDate()}</span>
+        <span className="font-medium text-zinc-200">{mounted ? formatStatusDate() : ""}</span>
         <span className="text-zinc-600">·</span>
         <span>
           <span className="text-zinc-200 font-medium tabular-nums">{kpis?.callsToday ?? 0}</span> calls today
