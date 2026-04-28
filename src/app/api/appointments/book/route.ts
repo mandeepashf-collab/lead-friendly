@@ -13,15 +13,21 @@ import {
  * `book_meeting` tool during a live conversation. Trusts the caller via the
  * service-role key (same pattern as /api/calls/trigger campaign-launch mode).
  *
- * Body:
- *   organizationId: string
- *   contactId: string | null
- *   callId:    string | null      // link back to the originating call
- *   date:      "YYYY-MM-DD"
- *   startTime: "HH:MM" (24h)
- *   endTime:   "HH:MM" (24h)      // optional — defaults to +30min
- *   title:     string              // e.g. "Demo call"
- *   notes:     string              // optional
+ * Body (camelCase preferred; snake_case aliases accepted for the Python
+ * agent worker which sends snake_case keys):
+ *   organizationId / organization_id : string (optional if callId resolves it)
+ *   contactId      / contact_id      : string | null (optional if callId resolves it)
+ *   callId         / call_id         : string | null  // originating call
+ *   date           : "YYYY-MM-DD"
+ *   startTime      / start_time      : "HH:MM" (24h)
+ *   endTime        / end_time        : "HH:MM" (24h)  // optional — defaults to +30min
+ *   title          : string                            // e.g. "Demo call"
+ *   notes          : string                            // optional
+ *
+ * When organizationId / contactId are not provided but callId is, the route
+ * looks them up from the `calls` table. The Python agent worker only knows
+ * call_id in its userdata, so this lookup keeps that worker payload minimal
+ * and avoids Railway redeploys for schema drift.
  *
  * Returns: { appointmentId } on success.
  */
@@ -35,11 +41,16 @@ export async function POST(req: NextRequest) {
 
   let body: {
     organizationId?: string;
+    organization_id?: string;
     contactId?: string | null;
+    contact_id?: string | null;
     callId?: string | null;
+    call_id?: string | null;
     date?: string;
     startTime?: string;
+    start_time?: string;
     endTime?: string;
+    end_time?: string;
     title?: string;
     notes?: string;
   } = {};
@@ -49,10 +60,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { organizationId, contactId, callId, date, startTime, title, notes } = body;
-  if (!organizationId || !date || !startTime) {
+  // Accept either camelCase (TS callers, e.g. /api/voice/answer) or snake_case
+  // (Python agent worker). Pick whichever is present.
+  let organizationId: string | null = body.organizationId ?? body.organization_id ?? null;
+  let contactId: string | null = body.contactId ?? body.contact_id ?? null;
+  const callId = body.callId ?? body.call_id ?? null;
+  const date = body.date;
+  const startTime = body.startTime ?? body.start_time;
+  const explicitEndTime = body.endTime ?? body.end_time;
+  const { title, notes } = body;
+
+  if (!date || !startTime) {
     return NextResponse.json(
-      { error: "organizationId, date, and startTime are required" },
+      { error: "date and startTime are required" },
       { status: 400 }
     );
   }
@@ -66,7 +86,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Default end time to start + 30 minutes if not provided
-  let endTime = body.endTime;
+  let endTime = explicitEndTime;
   if (!endTime) {
     const [h, m] = startTime.split(":").map(Number);
     const totalMin = h * 60 + m + 30;
@@ -80,6 +100,29 @@ export async function POST(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { persistSession: false, autoRefreshToken: false } }
   );
+
+  // If the caller didn't provide organizationId / contactId but did pass a
+  // callId, look them up from the `calls` table. The Python agent worker
+  // only has call_id in its userdata — resolving here keeps that worker
+  // payload minimal and avoids Railway redeploys for schema drift.
+  if (callId && (!organizationId || !contactId)) {
+    const { data: callRow } = await supabase
+      .from("calls")
+      .select("organization_id, contact_id")
+      .eq("id", callId)
+      .maybeSingle();
+    if (callRow) {
+      if (!organizationId) organizationId = callRow.organization_id ?? null;
+      if (!contactId) contactId = callRow.contact_id ?? null;
+    }
+  }
+
+  if (!organizationId) {
+    return NextResponse.json(
+      { error: "organizationId is required (or pass callId so we can resolve it)" },
+      { status: 400 }
+    );
+  }
 
   // Double-check the org owns the contact (defense in depth — the webhook
   // is trusted, but an encoded organizationId in client_state could have
