@@ -44,6 +44,7 @@ const supabaseAdmin = createClient(
 );
 
 export async function POST(req: NextRequest) {
+  console.log("[softphone/hangup] POST received");
   try {
     // ── Parse body ──────────────────────────────────────────
     let body: { callId?: string };
