@@ -183,188 +183,21 @@ function ReportingTab() {
 }
 
 /* ════════════════════════════════════════════════════════════════
-   BUSINESS PROFILE TAB
+   BUSINESS PROFILE TAB — removed Apr 28
+   ════════════════════════════════════════════════════════════════
+   The Business Profile tab was a 174-line component that wrote to a
+   `business_profiles` table that doesn't exist. Live calls already get
+   the org name from `organizations.name` (see lib/prompt-vars.ts), so
+   this UI was decorative only.
+
+   Removed in favor of a clean main page. If we ever add a real business
+   profile feature, restore from git history before this commit. The
+   roadmap entry is in docs/POST_LAUNCH_BACKLOG.md (F20-followup).
    ════════════════════════════════════════════════════════════════ */
-const INDUSTRIES = [
-  "Real Estate", "Insurance", "HVAC", "Dental", "Solar", "Legal", "Fitness",
-  "SaaS", "Retail", "Restaurant", "Construction", "Healthcare", "Finance", "Other",
-];
-
-const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-
-function BusinessProfileTab() {
-  const [saved, setSaved] = useState(false);
-  const [profile, setProfile] = useState({
-    businessName: "",
-    industry: "",
-    website: "",
-    address: "",
-    city: "",
-    state: "",
-    zip: "",
-    phone: "",
-    email: "",
-    description: "",
-  });
-  const [hours, setHours] = useState(
-    DAYS.map((day) => ({ day, open: day !== "Saturday" && day !== "Sunday", from: "09:00", to: "17:00" }))
-  );
-
-  const set = (k: keyof typeof profile) => (v: string) => setProfile((p) => ({ ...p, [k]: v }));
-
-  const handleSave = async () => {
-    const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    await supabase.from("business_profiles").upsert({ user_id: user.id, ...profile, hours }, { onConflict: "user_id" });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
-  };
-
-  useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return;
-      supabase.from("business_profiles").select("*").eq("user_id", user.id).single().then(({ data }) => {
-        if (!data) return;
-        setProfile({
-          businessName: data.businessName || "",
-          industry: data.industry || "",
-          website: data.website || "",
-          address: data.address || "",
-          city: data.city || "",
-          state: data.state || "",
-          zip: data.zip || "",
-          phone: data.phone || "",
-          email: data.email || "",
-          description: data.description || "",
-        });
-        if (data.hours) setHours(data.hours);
-      });
-    });
-  }, []);
-
-  return (
-    <div className="max-w-3xl space-y-6">
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 space-y-5">
-        <div>
-          <h3 className="text-sm font-semibold text-white">Business Information</h3>
-          <p className="text-xs text-zinc-500 mt-0.5">Used across your AI agents, templates, and communications</p>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Business Name</label>
-            <input value={profile.businessName} onChange={(e) => set("businessName")(e.target.value)}
-              placeholder="Acme Services LLC"
-              className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Industry</label>
-            <select value={profile.industry} onChange={(e) => set("industry")(e.target.value)}
-              className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-200 focus:border-indigo-500 focus:outline-none">
-              <option value="">Select industry…</option>
-              {INDUSTRIES.map((i) => <option key={i} value={i}>{i}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Website</label>
-            <input value={profile.website} onChange={(e) => set("website")(e.target.value)}
-              placeholder="https://yourwebsite.com" type="url"
-              className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Business Phone</label>
-            <input value={profile.phone} onChange={(e) => set("phone")(e.target.value)}
-              placeholder="+1 (555) 000-0000" type="tel"
-              className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Business Email</label>
-            <input value={profile.email} onChange={(e) => set("email")(e.target.value)}
-              placeholder="info@yourcompany.com" type="email"
-              className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Street Address</label>
-            <input value={profile.address} onChange={(e) => set("address")(e.target.value)}
-              placeholder="123 Main St"
-              className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none" />
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1.5">City</label>
-              <input value={profile.city} onChange={(e) => set("city")(e.target.value)} placeholder="City"
-                className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1.5">State</label>
-              <input value={profile.state} onChange={(e) => set("state")(e.target.value)} placeholder="CA"
-                className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1.5">ZIP</label>
-              <input value={profile.zip} onChange={(e) => set("zip")(e.target.value)} placeholder="90210"
-                className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none" />
-            </div>
-          </div>
-          <div className="col-span-2">
-            <label className="block text-xs font-medium text-zinc-400 mb-1.5">Business Description</label>
-            <textarea value={profile.description} onChange={(e) => set("description")(e.target.value)} rows={3}
-              placeholder="Brief description of your business and services…"
-              className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-indigo-500 focus:outline-none resize-none" />
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 space-y-4">
-        <div>
-          <h3 className="text-sm font-semibold text-white">Business Hours</h3>
-          <p className="text-xs text-zinc-500 mt-0.5">Your AI agent will only take calls during these hours</p>
-        </div>
-        <div className="space-y-2">
-          {hours.map((h, i) => (
-            <div key={h.day} className="flex items-center gap-4">
-              <div className="w-24 flex items-center gap-2">
-                <button
-                  onClick={() => setHours((prev) => prev.map((x, j) => j === i ? { ...x, open: !x.open } : x))}
-                  className={cn("relative h-5 w-9 rounded-full transition-colors focus:outline-none shrink-0", h.open ? "bg-indigo-600" : "bg-zinc-700")}>
-                  <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform", h.open ? "translate-x-4" : "translate-x-0.5")} />
-                </button>
-                <span className={cn("text-sm font-medium", h.open ? "text-white" : "text-zinc-600")}>{h.day.slice(0, 3)}</span>
-              </div>
-              {h.open ? (
-                <div className="flex items-center gap-2">
-                  <input type="time" value={h.from}
-                    onChange={(e) => setHours((prev) => prev.map((x, j) => j === i ? { ...x, from: e.target.value } : x))}
-                    className="h-8 rounded-lg border border-zinc-800 bg-zinc-900 px-2 text-sm text-zinc-300 focus:border-indigo-500 focus:outline-none" />
-                  <span className="text-zinc-600 text-sm">to</span>
-                  <input type="time" value={h.to}
-                    onChange={(e) => setHours((prev) => prev.map((x, j) => j === i ? { ...x, to: e.target.value } : x))}
-                    className="h-8 rounded-lg border border-zinc-800 bg-zinc-900 px-2 text-sm text-zinc-300 focus:border-indigo-500 focus:outline-none" />
-                </div>
-              ) : (
-                <span className="text-sm text-zinc-600">Closed</span>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <button onClick={handleSave}
-        className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-        <Save className="h-4 w-4" />
-        {saved ? "Saved!" : "Save Business Profile"}
-      </button>
-    </div>
-  );
-}
 
 /* ════════════════════════════════════════════════════════════════
    MAIN PAGE
    ════════════════════════════════════════════════════════════════ */
-// Pre-launch: Business Profile tab hidden — `business_profiles` table doesn't
-// yet exist, so saves silently fail. Re-enable once migration creates it.
 const TABS = [
   { id: "branding",  label: "Branding" },
   { id: "reporting", label: "Reporting" },
