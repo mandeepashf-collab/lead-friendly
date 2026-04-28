@@ -194,8 +194,11 @@ async function callHaiku(
     .trim();
 }
 
-function pickChannel(ctx: DealContext): "email" | "sms" {
-  return ctx.contact?.email ? "email" : "sms";
+function pickChannel(ctx: DealContext): "email" | "sms" | null {
+  if (!ctx.contact) return null;
+  if (ctx.contact.email) return "email";
+  if (ctx.contact.phone) return "sms";
+  return null;
 }
 
 export async function POST(request: Request) {

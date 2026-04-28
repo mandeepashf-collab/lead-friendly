@@ -3,12 +3,12 @@ import { Check, Sparkles, Zap, Building2 } from "lucide-react";
 import { SubscribeButton } from "./subscribe-button";
 
 // Stripe Price IDs pulled from env vars — configured per plan.
-// Set these in Vercel: STRIPE_PRICE_STARTER, STRIPE_PRICE_GROWTH, STRIPE_PRICE_AGENCY
+// Set these in Vercel: STRIPE_PRICE_STARTER, STRIPE_PRICE_PRO, STRIPE_PRICE_AGENCY
 // All three must be live-mode prices for a Subscription product.
 const plans = [
   {
     name: "Starter",
-    price: 97,
+    price: 79,
     priceId: process.env.STRIPE_PRICE_STARTER || null,
     desc: "Perfect for solo agents and small teams getting started with AI calling.",
     icon: Sparkles,
@@ -25,9 +25,9 @@ const plans = [
     ],
   },
   {
-    name: "Growth",
-    price: 297,
-    priceId: process.env.STRIPE_PRICE_GROWTH || null,
+    name: "Pro",
+    price: 199,
+    priceId: process.env.STRIPE_PRICE_PRO || null,
     desc: "For growing teams that need unlimited contacts and full automation.",
     icon: Zap,
     color: "border-indigo-500",
@@ -46,7 +46,7 @@ const plans = [
   },
   {
     name: "Agency",
-    price: 497,
+    price: 399,
     priceId: process.env.STRIPE_PRICE_AGENCY || null,
     desc: "White-label platform for agencies managing multiple client accounts.",
     icon: Building2,
@@ -59,7 +59,7 @@ const plans = [
       "Unlimited user seats",
       "White-label branding & custom domain",
       "Sub-account management",
-      "Everything in Growth",
+      "Everything in Pro",
       "Dedicated onboarding call",
       "Priority phone & Slack support",
       "SLA guarantee",
@@ -92,7 +92,7 @@ export default function PricingPage() {
           Simple, transparent pricing
         </div>
         <h1 className="text-4xl font-bold mb-4">
-          AI-powered sales calling,<br />
+          AI-powered sales calling, <br />
           <span className="text-indigo-400">built into your CRM</span>
         </h1>
         <p className="text-zinc-400 max-w-xl mx-auto text-lg">
