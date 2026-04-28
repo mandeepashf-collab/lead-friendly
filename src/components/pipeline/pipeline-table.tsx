@@ -25,7 +25,6 @@ interface DealRow {
   stageName: string;
   value: number;
   ageDays: number;
-  lastActivity: string | null;
   ownerName: string | null;
 }
 
@@ -54,7 +53,6 @@ export function PipelineTable({ stages, onRowClick, onAdd, onAiClick }: Props) {
             stageName: s.stage.name,
             value: opp.value || 0,
             ageDays: opp.days_in_stage ?? 0,
-            lastActivity: null,
             ownerName: opp.assigned_user?.full_name ?? null,
           };
         })
@@ -89,9 +87,9 @@ export function PipelineTable({ stages, onRowClick, onAdd, onAiClick }: Props) {
         <p className="text-sm text-zinc-400">No deals yet — add one to see them here.</p>
         <button
           onClick={onAdd}
-          className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+          className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs bg-[var(--violet-bg)] text-[var(--violet-primary)] hover:bg-[var(--violet-border)] transition-colors"
         >
-          <Plus className="h-4 w-4" />
+          <Plus className="h-3 w-3" />
           Add Deal
         </button>
       </div>
@@ -108,7 +106,6 @@ export function PipelineTable({ stages, onRowClick, onAdd, onAiClick }: Props) {
             <Th>Stage</Th>
             <Th sortable onClick={() => toggleSort("value")} active={sortKey === "value"} dir={sortDir} align="right">Value</Th>
             <Th sortable onClick={() => toggleSort("age")} active={sortKey === "age"} dir={sortDir} align="right">Age</Th>
-            <Th>Last activity</Th>
             <Th>Owner</Th>
             <Th align="center"><span className="sr-only">AI insights</span></Th>
           </tr>
@@ -135,7 +132,6 @@ export function PipelineTable({ stages, onRowClick, onAdd, onAiClick }: Props) {
               >
                 {deal.ageDays}d
               </td>
-              <td className="px-4 py-3 text-zinc-400">{deal.lastActivity || "—"}</td>
               <td className="px-4 py-3 text-zinc-400">{deal.ownerName || "—"}</td>
               <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                 <button

@@ -20,7 +20,7 @@ type CoachResponse = { mode: "coach"; suggestion: string; context: DealContext }
 type DraftResponse = {
   mode: "draft";
   message: string;
-  suggestedChannel: "email" | "sms";
+  suggestedChannel: "email" | "sms" | null;
   context: DealContext;
 };
 type ContextResponse = { mode: "context"; context: DealContext };
@@ -150,14 +150,19 @@ export function DealAIDrawer({ dealId, dealName, onClose }: Props) {
   const headerValue = ctxFromAny?.deal.value;
 
   return (
-    <div className="fixed inset-0 z-50" aria-modal="true" role="dialog">
+    <div
+      className="fixed inset-0 z-50"
+      onClick={onClose}
+      aria-modal="true"
+      role="dialog"
+    >
       <div
-        onClick={onClose}
         className={`absolute inset-0 bg-black/40 transition-opacity duration-150 ${open ? "opacity-100" : "opacity-0"}`}
         aria-hidden="true"
       />
       <div
         ref={drawerRef}
+        onClick={(e) => e.stopPropagation()}
         className={`absolute right-0 top-0 h-full w-full sm:w-[480px] bg-zinc-950 border-l border-zinc-800 shadow-2xl transform transition-transform duration-200 flex flex-col ${open ? "translate-x-0" : "translate-x-full"}`}
       >
         <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-800">
@@ -311,9 +316,11 @@ function DraftPanel({
   };
   return (
     <div className="space-y-3">
-      <span className="inline-block rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider bg-[var(--violet-bg)] text-[var(--violet-primary)]">
-        {data.suggestedChannel}
-      </span>
+      {data.suggestedChannel && (
+        <span className="inline-block rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider bg-[var(--violet-bg)] text-[var(--violet-primary)]">
+          {data.suggestedChannel}
+        </span>
+      )}
       <textarea
         value={draftEdit}
         onChange={(e) => setDraftEdit(e.target.value)}
