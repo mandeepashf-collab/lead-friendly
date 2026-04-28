@@ -161,12 +161,34 @@ export async function bookCalcomMeeting(
   }
 }
 
+export interface CalcomValidationResult {
+  ok: boolean
+  // Which API version accepted the key. We use this to know later whether
+  // bookings should go to v2 (Bearer) or v1 (apiKey query param). For now
+  // we only support v2 bookings, but recording the version helps debugging.
+  apiVersion?: 'v2' | 'v1'
+  error?: string
+}
+
 /**
- * Validate a Cal.com API key by hitting the /v2/me endpoint. Used by the
- * save flow to give immediate feedback when the user pastes a bad key.
- * Returns true if the key works, false otherwise. Never throws.
+ * Validate a Cal.com API key by hitting an authenticated endpoint. Returns a
+ * structured result with the actual error message from Cal.com when the key
+ * is rejected — that's the difference between "key is invalid" and "Cal.com
+ * is down" or "key works but lacks scope X".
+ *
+ * Validation strategy:
+ *   1. Try v2 GET /v2/me with Authorization: Bearer <key>.
+ *   2. If v2 rejects (commonly because the key was generated in a place
+ *      that only issues v1 keys), fall back to v1 GET /v1/me?apiKey=<key>.
+ *   3. Only return ok:false if BOTH fail.
+ *
+ * Never throws.
  */
-export async function validateCalcomApiKey(apiKey: string): Promise<boolean> {
+export async function validateCalcomApiKey(
+  apiKey: string,
+): Promise<CalcomValidationResult> {
+  // ── Try v2 ────────────────────────────────────────────────────────────
+  let v2Detail = ''
   try {
     const res = await fetch(`${CAL_API_BASE}/me`, {
       headers: {
@@ -174,8 +196,46 @@ export async function validateCalcomApiKey(apiKey: string): Promise<boolean> {
         'cal-api-version': '2024-08-13',
       },
     })
-    return res.ok
-  } catch {
-    return false
+    if (res.ok) {
+      return { ok: true, apiVersion: 'v2' }
+    }
+    try {
+      const j = await res.json()
+      v2Detail =
+        typeof j?.error?.message === 'string'
+          ? j.error.message
+          : typeof j?.message === 'string'
+            ? j.message
+            : `HTTP ${res.status}`
+    } catch {
+      v2Detail = `HTTP ${res.status}`
+    }
+  } catch (err) {
+    v2Detail = err instanceof Error ? err.message : 'v2 request failed'
+  }
+
+  // ── Try v1 fallback ───────────────────────────────────────────────────
+  let v1Detail = ''
+  try {
+    const res = await fetch(
+      `https://api.cal.com/v1/me?apiKey=${encodeURIComponent(apiKey)}`,
+    )
+    if (res.ok) {
+      return { ok: true, apiVersion: 'v1' }
+    }
+    try {
+      const j = await res.json()
+      v1Detail =
+        typeof j?.message === 'string' ? j.message : `HTTP ${res.status}`
+    } catch {
+      v1Detail = `HTTP ${res.status}`
+    }
+  } catch (err) {
+    v1Detail = err instanceof Error ? err.message : 'v1 request failed'
+  }
+
+  return {
+    ok: false,
+    error: `Cal.com rejected the API key. v2 said: ${v2Detail}. v1 said: ${v1Detail}.`,
   }
 }
