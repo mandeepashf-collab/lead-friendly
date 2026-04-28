@@ -79,11 +79,6 @@ export default function NewCampaignPage() {
   const toggleTag = (name: string) =>
     setForm(f => ({ ...f, tags: f.tags.includes(name) ? f.tags.filter(t => t !== name) : [...f.tags, name] }));
 
-  const costPerMin = 0.047;
-  const avgMins = 3;
-  const estimatedCost = (form.daily_limit * avgMins * costPerMin).toFixed(2);
-  const daysToComplete = Math.ceil(100 / form.daily_limit); // assume 100 contacts
-
   const handleLaunch = async (status: "active" | "draft") => {
     if (!form.name.trim()) { alert("Campaign name is required"); return; }
     setSaving(true);
@@ -295,16 +290,6 @@ export default function NewCampaignPage() {
                   <span className="text-white font-medium">{r.value}</span>
                 </div>
               ))}
-            </div>
-            <div className="grid grid-cols-2 gap-4 pt-2">
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4 text-center">
-                <p className="text-2xl font-bold text-indigo-400">${estimatedCost}</p>
-                <p className="text-xs text-zinc-500 mt-1">Est. daily cost @ $0.047/min</p>
-              </div>
-              <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4 text-center">
-                <p className="text-2xl font-bold text-indigo-400">{daysToComplete}d</p>
-                <p className="text-xs text-zinc-500 mt-1">Est. completion (100 contacts)</p>
-              </div>
             </div>
             <div className="flex gap-3 pt-2">
               <button onClick={() => handleLaunch("active")} disabled={saving}
