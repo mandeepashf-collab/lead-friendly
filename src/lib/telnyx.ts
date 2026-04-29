@@ -14,6 +14,72 @@ function headers(): Record<string, string> {
   };
 }
 
+// ── SMS ──────────────────────────────────────────────────────────
+
+export interface SendSmsOptions {
+  to: string;
+  text: string;
+  from?: string;                 // defaults to TELNYX_PHONE_NUMBER
+  messagingProfileId?: string;   // defaults to TELNYX_MESSAGING_PROFILE_ID
+}
+
+export interface SendSmsResult {
+  ok: boolean;
+  messageId?: string;
+  error?: string;
+}
+
+/**
+ * Send an outbound SMS via Telnyx /v2/messages. Used by the workflow
+ * dispatcher (server-to-server, no HTTP roundtrip) and by /api/sms/send
+ * (HTTP-callable wrapper).
+ *
+ * Never throws — returns { ok: false, error } on failure so callers in
+ * best-effort hot paths (post-appointment workflow firing) don't break
+ * the surrounding response.
+ */
+export async function sendSms(opts: SendSmsOptions): Promise<SendSmsResult> {
+  const apiKey = process.env.TELNYX_API_KEY;
+  const fromNumber = opts.from ?? process.env.TELNYX_PHONE_NUMBER;
+  const messagingProfileId = opts.messagingProfileId ?? process.env.TELNYX_MESSAGING_PROFILE_ID;
+
+  if (!apiKey || !fromNumber) {
+    return { ok: false, error: "Telnyx credentials not configured" };
+  }
+
+  try {
+    const res = await fetch(`${TELNYX_BASE}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: fromNumber,
+        to: opts.to,
+        text: opts.text,
+        ...(messagingProfileId ? { messaging_profile_id: messagingProfileId } : {}),
+      }),
+    });
+
+    const data = await res.json().catch(() => ({} as Record<string, unknown>));
+
+    if (!res.ok) {
+      const errs = (data as { errors?: Array<{ detail?: string }> }).errors;
+      const detail = errs?.[0]?.detail || `HTTP ${res.status}`;
+      return { ok: false, error: detail };
+    }
+
+    const messageId = (data as { data?: { id?: string } }).data?.id;
+    return { ok: true, messageId };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "SMS send failed",
+    };
+  }
+}
+
 // ── Core API call ────────────────────────────────────────────────
 
 export async function telnyxPost(path: string, body: Record<string, unknown>) {

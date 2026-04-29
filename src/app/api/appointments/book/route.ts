@@ -5,6 +5,7 @@ import {
   buildCalcomStartISO,
   getCalcomIntegration,
 } from "@/lib/calcom/client";
+import { triggerWorkflows } from "@/lib/workflows/dispatcher";
 
 /**
  * POST /api/appointments/book
@@ -263,6 +264,25 @@ export async function POST(req: NextRequest) {
     // Catch everything — Cal.com sync is never allowed to break the
     // appointment response.
     console.error("[cal_com] sync threw unexpectedly:", err);
+  }
+
+  // Fire any active workflows for trigger_type='appointment_booked'.
+  // Best-effort: a workflow failure must not break the appointment response.
+  // The dispatcher already swallows its own errors and logs them, but we
+  // wrap in try/catch as defense in depth.
+  try {
+    await triggerWorkflows("appointment_booked", {
+      organizationId,
+      contactId: contactId ?? null,
+      payload: {
+        appointmentId: appt.id,
+        appointmentDate: date,
+        startTime: startTime,
+        title: title || "Meeting",
+      },
+    });
+  } catch (err) {
+    console.error("[workflow] dispatcher threw:", err);
   }
 
   return NextResponse.json({ appointmentId: appt.id, ...appt });
