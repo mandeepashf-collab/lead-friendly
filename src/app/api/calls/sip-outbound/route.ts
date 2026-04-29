@@ -327,11 +327,52 @@ export async function POST(req: NextRequest) {
     const rawGreeting =
       (a.greeting_message as string) ?? `Hi, this is ${a.name}. How can I help you?`;
 
+    // Inject current-date context. Without this, Haiku defaults dates from
+    // training data (e.g. picks 2025 when the lead says "today") and sends
+    // past dates to book_meeting, which Cal.com rejects. We pre-resolve the
+    // next 7 days in Pacific Time as an explicit calendar table so the model
+    // doesn't have to do weekday math — it just looks up the right row.
+    const ptFormatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+    const ptDateOnlyFormatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Los_Angeles",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }); // en-CA gives YYYY-MM-DD
+    const ptTimeFormatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+    const now = new Date();
+    const calendarRows: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
+      const label = i === 0 ? "TODAY" : i === 1 ? "TOMORROW" : `+${i} days`;
+      const human = ptFormatter.format(d);          // "Wednesday, April 29, 2026"
+      const iso = ptDateOnlyFormatter.format(d);    // "2026-04-29"
+      calendarRows.push(`  ${label.padEnd(9)} → ${human} → use date="${iso}"`);
+    }
+    const dateContext =
+      `CURRENT DATE & TIME (Pacific Time)\n` +
+      `It is currently ${ptTimeFormatter.format(now)} on ${ptFormatter.format(now)}.\n\n` +
+      `When the lead says "today", "tomorrow", "Friday", "next Monday", or any relative date, use this calendar:\n\n` +
+      calendarRows.join("\n") +
+      `\n\nALWAYS pass dates to book_meeting in YYYY-MM-DD format using the values above. Never use a date earlier than today's date. If the lead requests a date more than 7 days out, compute it from today's date — never from your training data.\n\n` +
+      `═══════════════════════════════════════════\n\n`;
+
     const agentConfig = {
       agentId: a.id as string,
       organizationId: orgId,
       name: (a.name as string) || "Assistant",
-      systemPrompt: substituteVariables(rawSystemPrompt, promptCtx),
+      systemPrompt: dateContext + substituteVariables(rawSystemPrompt, promptCtx),
       greeting: substituteVariables(rawGreeting, promptCtx),
       voiceId: (a.voice_id as string) ?? "21m00Tcm4TlvDq8ikWAM",
       voiceSpeed: (a.voice_speed as number) ?? 1.0,
