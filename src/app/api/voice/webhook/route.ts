@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { applyContactedOnFirstCall } from "@/lib/contacts/auto-status";
 
 function getSupabase() {
   return createClient(
@@ -97,6 +98,11 @@ async function handleRetellWebhook(body: Record<string, unknown>) {
         await supabase.from("contacts")
           .update({ call_status: "called" })
           .eq("id", call.contact_id);
+        // Auto-status: upgrade contact 'new' → 'contacted'. Best-effort.
+        // Runs after the DNC check above so a DNC call (which sets
+        // status='lost') will not be overwritten — applyContactedOnFirstCall
+        // only writes when status='new'.
+        await applyContactedOnFirstCall(supabase, call.contact_id);
       }
       break;
     }
@@ -153,6 +159,8 @@ async function handleTelnyxWebhook(body: Record<string, unknown>) {
         await supabase.from("contacts")
           .update({ call_status: "called" })
           .eq("id", call.contact_id);
+        // Auto-status: upgrade contact 'new' → 'contacted'. Best-effort.
+        await applyContactedOnFirstCall(supabase, call.contact_id);
       }
       break;
     }

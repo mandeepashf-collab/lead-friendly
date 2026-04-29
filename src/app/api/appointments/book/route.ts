@@ -6,6 +6,7 @@ import {
   getCalcomIntegration,
 } from "@/lib/calcom/client";
 import { triggerWorkflows } from "@/lib/workflows/dispatcher";
+import { applyAppointmentBookedStatus } from "@/lib/contacts/auto-status";
 
 /**
  * POST /api/appointments/book
@@ -284,6 +285,12 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error("[workflow] dispatcher threw:", err);
   }
+
+  // Auto-status: flip the linked contact to 'appointment_booked'.
+  // Best-effort — helper swallows errors. Skipped automatically if contactId
+  // is null. Skips terminal statuses (won/lost/do_not_contact) and is
+  // idempotent on duplicate webhooks.
+  await applyAppointmentBookedStatus(supabase, contactId);
 
   return NextResponse.json({ appointmentId: appt.id, ...appt });
 }

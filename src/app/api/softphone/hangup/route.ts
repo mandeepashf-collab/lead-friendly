@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createClient as createUserClient } from "@/lib/supabase/server";
 import { getRoomService } from "@/lib/livekit/server";
 import { getEgressClient } from "@/lib/livekit/egress";
+import { applyContactedOnFirstCall } from "@/lib/contacts/auto-status";
 
 /**
  * POST /api/softphone/hangup

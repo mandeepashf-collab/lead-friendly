@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getWebhookReceiver } from "@/lib/livekit/server";
 import { submitToDeepgram } from "@/lib/deepgram/submit";
+import { applyContactedOnFirstCall } from "@/lib/contacts/auto-status";
 
 /**
  * POST /api/webrtc/webhook
@@ -243,7 +244,7 @@ export async function POST(req: NextRequest) {
         // set by the agent worker (which may have richer outcome data).
         const { data: existing } = await supabaseAdmin
           .from("calls")
-          .select("status, started_at, answered_at, duration_seconds")
+          .select("status, started_at, answered_at, duration_seconds, contact_id")
           .eq("id", callRecordId)
           .single();
 
@@ -268,6 +269,9 @@ export async function POST(req: NextRequest) {
               duration_seconds: duration,
             })
             .eq("id", callRecordId);
+
+          // Auto-status: upgrade contact 'new' → 'contacted'. Best-effort.
+          await applyContactedOnFirstCall(supabaseAdmin, existing.contact_id);
         }
         break;
       }

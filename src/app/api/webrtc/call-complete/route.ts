@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
+import { applyContactedOnFirstCall } from "@/lib/contacts/auto-status";
 
 /**
  * POST /api/webrtc/call-complete
@@ -67,7 +68,7 @@ export async function POST(req: NextRequest) {
     // ── Verify call record exists ────────────────────────────────
     const { data: callRecord, error: fetchErr } = await supabaseAdmin
       .from("calls")
-      .select("id, ai_agent_id, organization_id, status")
+      .select("id, ai_agent_id, organization_id, status, contact_id")
       .eq("id", callRecordId)
       .single();
 
@@ -159,6 +160,9 @@ Return ONLY valid JSON, no markdown or extra text.`,
             `[webrtc/call-complete] ✓ call=${callRecordId} summary saved, sentiment=${sentiment}`,
           );
 
+          // Auto-status: upgrade contact 'new' → 'contacted'. Best-effort.
+          await applyContactedOnFirstCall(supabaseAdmin, callRecord.contact_id);
+
           return NextResponse.json({
             success: true,
             callRecordId,
@@ -195,6 +199,9 @@ Return ONLY valid JSON, no markdown or extra text.`,
     console.log(
       `[webrtc/call-complete] ✓ call=${callRecordId} saved (fallback path)`,
     );
+
+    // Auto-status: upgrade contact 'new' → 'contacted'. Best-effort.
+    await applyContactedOnFirstCall(supabaseAdmin, callRecord.contact_id);
 
     return NextResponse.json({
       success: true,
