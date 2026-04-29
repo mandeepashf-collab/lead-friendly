@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Search,
@@ -30,6 +30,18 @@ import { ImportDialog } from "./import-dialog";
 import type { Contact } from "@/types/database";
 import { useSoftphone } from "@/components/softphone/SoftphoneContext";
 import { InlineCallTrigger } from "@/components/softphone/InlineCallTrigger";
+import { Settings as SettingsIcon } from "lucide-react";
+import { ManageFieldsDrawer } from "@/components/contacts/ManageFieldsDrawer";
+import { CustomFieldCell } from "@/components/contacts/CustomFieldCell";
+import {
+  listCustomFields,
+  type CustomFieldDefinition,
+} from "@/lib/contacts/custom-fields";
+import {
+  getTablePreferences,
+  CONTACTS_DEFAULT_COLUMNS,
+  type ColumnPref,
+} from "@/lib/contacts/table-preferences";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "All", color: "" },
@@ -66,6 +78,34 @@ export default function ContactsPage() {
   const [callToast, setCallToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const { openWith: openSoftphone } = useSoftphone();
   const PAGE_SIZE = 25;
+
+  // ── Phase 2b: column prefs + custom field defs ──
+  const [showFieldsDrawer, setShowFieldsDrawer] = useState(false);
+  const [columnPrefs, setColumnPrefs] = useState<ColumnPref[]>(CONTACTS_DEFAULT_COLUMNS);
+  const [customFieldDefs, setCustomFieldDefs] = useState<CustomFieldDefinition[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [prefs, defs] = await Promise.all([
+        getTablePreferences("contacts"),
+        listCustomFields(),
+      ]);
+      if (cancelled) return;
+      if (prefs && prefs.length > 0) setColumnPrefs(prefs);
+      setCustomFieldDefs(defs);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Visible custom-field columns to render in the table, in pref order.
+  const visibleCustomColumns = columnPrefs
+    .filter((c) => c.visible && c.field_key.startsWith("custom:"))
+    .map((c) => {
+      const slug = c.field_key.slice(7);
+      return customFieldDefs.find((d) => d.field_key === slug);
+    })
+    .filter((d): d is CustomFieldDefinition => d !== undefined);
 
   const openCallModal = useCallback((contact: Contact) => {
     if (!contact.phone) {
@@ -180,6 +220,13 @@ export default function ContactsPage() {
           <button className="flex h-9 items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-3 text-sm text-zinc-300 hover:bg-zinc-700">
             <Download className="h-4 w-4" />Export
           </button>
+          <button
+            onClick={() => setShowFieldsDrawer(true)}
+            className="flex h-9 items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-3 text-sm text-zinc-300 hover:bg-zinc-700"
+            title="Manage fields"
+          >
+            <SettingsIcon className="h-4 w-4" />Manage fields
+          </button>
           <button onClick={() => { setEditContact(null); setShowAddDialog(true); }} className="flex h-9 items-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700">
             <Plus className="h-4 w-4" />Add Contact
           </button>
@@ -252,18 +299,24 @@ export default function ContactsPage() {
                     )}
                   </th>
                 ))}
+                {/* Phase 2b: dynamic custom-field columns */}
+                {visibleCustomColumns.map((def) => (
+                  <th key={`custom-${def.id}`} className="px-4 py-3 text-left">
+                    <span className="text-xs font-medium uppercase text-zinc-500">{def.name}</span>
+                  </th>
+                ))}
                 <th className="w-10 px-4 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800/50">
               {loading ? (
-                <tr><td colSpan={9} className="px-4 py-16 text-center">
+                <tr><td colSpan={9 + visibleCustomColumns.length} className="px-4 py-16 text-center">
                   <div className="flex items-center justify-center gap-2 text-zinc-500">
                     <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-indigo-500" />Loading...
                   </div>
                 </td></tr>
               ) : contacts.length === 0 ? (
-                <tr><td colSpan={9} className="px-4 py-16 text-center">
+                <tr><td colSpan={9 + visibleCustomColumns.length} className="px-4 py-16 text-center">
                   <div className="flex flex-col items-center gap-3 text-zinc-600">
                     <UserPlus className="h-10 w-10" />
                     <p className="text-sm font-medium">{search || statusFilter !== "all" ? "No contacts match your filters" : "No contacts yet"}</p>
@@ -316,6 +369,16 @@ export default function ContactsPage() {
                   <td className="px-4 py-3 cursor-pointer" onClick={goToContact}><StatusBadge status={contact.status} /></td>
                   <td className="px-4 py-3 cursor-pointer" onClick={goToContact}><span className="text-sm capitalize text-zinc-500">{contact.source?.replace(/_/g, " ") || "—"}</span></td>
                   <td className="px-4 py-3 cursor-pointer" onClick={goToContact}><span className="text-sm text-zinc-500">{new Date(contact.created_at).toLocaleDateString()}</span></td>
+                  {/* Phase 2b: custom-field columns */}
+                  {visibleCustomColumns.map((def) => {
+                    const blob = (contact as Contact & { custom_fields?: Record<string, unknown> | null }).custom_fields;
+                    const rawValue = blob?.[def.field_key];
+                    return (
+                      <td key={`cell-${def.id}`} className="px-4 py-3 cursor-pointer" onClick={goToContact}>
+                        <CustomFieldCell fieldKey={def.field_key} fieldType={def.field_type} rawValue={rawValue} />
+                      </td>
+                    );
+                  })}
                   {/* Actions — does NOT navigate (stopPropagation on the cell) */}
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -359,6 +422,15 @@ export default function ContactsPage() {
       {showAddDialog && <ContactDialog contact={editContact} onClose={() => { setShowAddDialog(false); setEditContact(null); }} onSaved={() => { setShowAddDialog(false); setEditContact(null); refetch(); }} />}
       {showDetail && selectedContact && <ContactDetail contact={selectedContact} onClose={() => { setShowDetail(false); setSelectedContact(null); }} onEdit={() => { setShowDetail(false); setEditContact(selectedContact); setShowAddDialog(true); }} onDeleted={() => { setShowDetail(false); setSelectedContact(null); refetch(); }} />}
       {showImport && <ImportDialog onClose={() => setShowImport(false)} onImported={() => { setShowImport(false); refetch(); }} />}
+
+      {/* Phase 2b: Manage Fields drawer */}
+      {showFieldsDrawer && (
+        <ManageFieldsDrawer
+          currentColumns={columnPrefs}
+          onClose={() => setShowFieldsDrawer(false)}
+          onApplied={(next) => { setColumnPrefs(next); setShowFieldsDrawer(false); }}
+        />
+      )}
 
       {/* Bulk delete confirmation (Stage 1.6.1) */}
       {confirmDeleteOpen && (

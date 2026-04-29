@@ -14,6 +14,11 @@ import { useContact, updateContact as updateContactApi, deleteContact } from "@/
 import { addContactTag, removeContactTag } from "@/hooks/use-contact-tags";
 import { CustomFieldsBlock } from "@/components/contacts/CustomFieldsBlock";
 import { FieldSection } from "@/components/contacts/FieldSection";
+import { CustomFieldEditor } from "@/components/contacts/CustomFieldEditor";
+import {
+  listCustomFields,
+  type CustomFieldDefinition,
+} from "@/lib/contacts/custom-fields";
 import { InlineCallTrigger } from "@/components/softphone/InlineCallTrigger";
 import { useRecordingUrl } from "@/hooks/use-recording-url";
 import { useCallTranscript } from "@/hooks/useCallTranscript";
@@ -365,6 +370,17 @@ export default function ContactDetailPage() {
   }, [statusDropdownOpen]);
   const [tagInput, setTagInput] = useState("");
 
+  // Phase 2b: load custom field definitions for the editable section
+  const [customFieldDefs, setCustomFieldDefs] = useState<CustomFieldDefinition[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const defs = await listCustomFields();
+      if (!cancelled) setCustomFieldDefs(defs);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const supabase = createClient();
 
   // Live call updates — ringing → in_progress → completed without page refresh
@@ -621,9 +637,30 @@ export default function ContactDetailPage() {
               />
             </div>
 
-            {/* Custom Fields (read-only) — rendered BEFORE Details so imported
-                per-contact data is visible alongside the core identity fields. */}
-            <CustomFieldsBlock customFields={contact.custom_fields} />
+            {/* Custom Fields — editable when definitions exist, falls back to
+                read-only render when none. (Phase 2b: hybrid model — definitions
+                in custom_fields table drive the editor; values live in
+                contacts.custom_fields JSONB.) */}
+            {customFieldDefs.length > 0 ? (
+              <div>
+                <p className="text-xs font-semibold text-zinc-600 uppercase tracking-wide mb-2">
+                  Additional info
+                </p>
+                <dl className="space-y-2.5">
+                  {customFieldDefs.map((def) => (
+                    <CustomFieldEditor
+                      key={def.id}
+                      contactId={contactId}
+                      currentBlob={contact.custom_fields}
+                      definition={def}
+                      onSaved={(next) => setContact((prev: Record<string, unknown>) => ({ ...prev, custom_fields: next }))}
+                    />
+                  ))}
+                </dl>
+              </div>
+            ) : (
+              <CustomFieldsBlock customFields={contact.custom_fields} />
+            )}
 
             <FieldSection
               title="Details"
