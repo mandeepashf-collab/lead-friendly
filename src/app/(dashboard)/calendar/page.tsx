@@ -42,7 +42,9 @@ export default function CalendarPage() {
 
   const apptsByDay: Record<number, typeof appointments> = {};
   appointments.forEach((a) => {
-    const d = new Date(a.appointment_date).getDate();
+    // appointment_date is "YYYY-MM-DD" — parse as local date, NOT through new Date()
+    // (which interprets it as UTC midnight and shifts to previous day in negative-UTC zones).
+    const d = Number(a.appointment_date.split("-")[2]);
     if (!apptsByDay[d]) apptsByDay[d] = [];
     apptsByDay[d].push(a);
   });

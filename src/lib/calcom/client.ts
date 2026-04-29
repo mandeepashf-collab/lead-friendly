@@ -35,11 +35,33 @@ export function buildCalcomStartISO(
   startTime: string,
   timezone: string,
 ): string {
-  // Cal.com /v2/bookings expects `start` in ISO-8601 plus a separate
-  // `attendee.timeZone`. We pass the raw local-wall-clock time and let
-  // Cal.com interpret it via the attendee timezone.
+  // Cal.com /v2/bookings interprets a "start" with no offset as UTC, NOT as the
+  // attendee timezone (despite what their docs imply). We must convert the local
+  // wall-clock time in `timezone` to a real UTC instant and pass it as ISO-Z.
+  // Verified empirically 2026-04-29 by direct curl to the v2 API.
   const time = startTime.length === 5 ? `${startTime}:00` : startTime
-  return `${date}T${time}`
+
+  // Compute the timezone offset for `timezone` at this moment, in minutes.
+  // We do this by formatting the local clock in the target tz and diffing
+  // with UTC. Cleaner alternatives all need a tz lib we don't have on prod.
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false,
+  })
+  const parts = dtf.formatToParts(new Date(`${date}T${time}Z`)) // pretend UTC
+  const lookup: Record<string, string> = {}
+  for (const p of parts) lookup[p.type] = p.value
+  const asTzWallClock = Date.UTC(
+    Number(lookup.year), Number(lookup.month) - 1, Number(lookup.day),
+    Number(lookup.hour === "24" ? "0" : lookup.hour),
+    Number(lookup.minute), Number(lookup.second),
+  )
+  const offsetMs = asTzWallClock - new Date(`${date}T${time}Z`).getTime()
+  // The actual UTC instant for the requested local time = pretend-UTC minus offset
+  const realUtc = new Date(new Date(`${date}T${time}Z`).getTime() - offsetMs)
+  return realUtc.toISOString()
 }
 
 export interface CalcomIntegration {
