@@ -10,7 +10,7 @@ import { BRAND_PREVIEW_COOKIE_NAME } from '@/lib/schemas/stage3'
 // 2. Custom domain routing — white-label sub-account detection
 // 3. Impersonation session — scope data access to sub-account
 
-const PUBLIC_ROUTES = ['/auth', '/login', '/register', '/api/voice', '/api/health', '/api/agents', '/pricing', '/_next', '/favicon', '/api/stripe/webhook', '/api/webrtc/webhook', '/api/webhooks']
+const PUBLIC_ROUTES = ['/auth', '/login', '/register', '/api/voice', '/api/health', '/api/agents', '/pricing', '/_next', '/favicon', '/api/stripe/webhook', '/api/webrtc/webhook', '/api/webhooks', '/api/calls/sip-outbound']
 
 // Pages a user with no active subscription can still visit (so they can pay).
 // Anything NOT in this list redirects to /billing when subscription is inactive.
