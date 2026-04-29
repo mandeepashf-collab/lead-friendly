@@ -180,11 +180,27 @@ async function loadContact(contactId: string | null | undefined) {
   return data;
 }
 
+// ─── Organization Loading (for {{business_name}} substitution) ──
+// Brandon's outbound greeting says "calling from {{business_name}}". The
+// previous code never substituted that variable, so leads literally heard
+// "{{business_name}}" out loud — a huge credibility hit. Pull the org's
+// `name` column once per call and pass it through resolveTemplateVars.
+async function loadOrganization(organizationId: string | null | undefined) {
+  if (!organizationId) return null;
+  const { data } = await supabaseAdmin
+    .from("organizations")
+    .select("id, name")
+    .eq("id", organizationId)
+    .maybeSingle();
+  return data;
+}
+
 // ─── Template Variable Replacement ──────────────────────────────
 function resolveTemplateVars(
   text: string,
   contact: Record<string, unknown> | null,
   agent: Record<string, unknown> | null,
+  organization: Record<string, unknown> | null = null,
 ): string {
   if (!text) return text;
 
@@ -211,6 +227,12 @@ function resolveTemplateVars(
 
   const agentName = (agent?.name as string) || "AI Assistant";
   const transferNumber = (agent?.transfer_number as string) || "";
+
+  // Resolve the business name for {{business_name}} (and aliases). Single
+  // source: organizations.name. Conversational fallback "our team" so a
+  // missing org name doesn't leave Brandon saying "calling from " with
+  // a hanging space.
+  const businessName = (organization?.name as string)?.trim() || "our team";
 
   // Build replacement map — supports both {{contact.field}} and {field} syntax
   const vars: Record<string, string> = {
@@ -244,6 +266,10 @@ function resolveTemplateVars(
     "org.live_rep_number": transferNumber,
     "agent.name": agentName,
     "caller_id_readback": phone,
+    // Business identity — Brandon's greeting reads "calling from {{business_name}}"
+    "business_name": businessName,
+    "business.name": businessName,
+    "org.business_name": businessName,
   };
 
   let result = text;
@@ -256,6 +282,18 @@ function resolveTemplateVars(
     }
   }
 
+  // Final pass: any {{var}} or {var} left over after all known keys have
+  // been substituted means the lead/agent author used a variable we don't
+  // recognize. Stripping it is far better than letting Brandon literally
+  // speak the curly braces — the spoken sentence stays grammatical even
+  // if it loses some specificity.
+  result = result
+    .replace(/\{\{\s*[a-zA-Z0-9_.]+\s*\}\}/g, "")
+    .replace(/\{\s*[a-zA-Z0-9_.]+\s*\}/g, "")
+    // Tidy any double spaces left by the strip
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
   return result;
 }
 
@@ -264,6 +302,7 @@ function buildSystemPrompt(
   agent: Record<string, unknown> | null,
   contact: Record<string, unknown> | null,
   callDirection?: "inbound" | "outbound",
+  organization: Record<string, unknown> | null = null,
 ): string {
   if (!agent) return emergencySystemPrompt();
 
@@ -307,21 +346,21 @@ function buildSystemPrompt(
 `;
 
   // Resolve template variables like {{contact.first_name}} in the prompt
-  const resolvedPrompt = resolveTemplateVars(basePrompt, contact, agent);
+  const resolvedPrompt = resolveTemplateVars(basePrompt, contact, agent, organization);
   if (resolvedPrompt) {
     prompt += `═══ YOUR INSTRUCTIONS ═══\n${resolvedPrompt}\n\n`;
   }
 
   if (objections) {
-    prompt += `═══ OBJECTION HANDLING ═══\n${resolveTemplateVars(objections, contact, agent)}\n\n`;
+    prompt += `═══ OBJECTION HANDLING ═══\n${resolveTemplateVars(objections, contact, agent, organization)}\n\n`;
   }
 
   if (knowledge) {
-    prompt += `═══ KNOWLEDGE BASE ═══\n${resolveTemplateVars(knowledge, contact, agent)}\n\n`;
+    prompt += `═══ KNOWLEDGE BASE ═══\n${resolveTemplateVars(knowledge, contact, agent, organization)}\n\n`;
   }
 
   if (closing) {
-    prompt += `═══ CLOSING SCRIPT ═══\n${resolveTemplateVars(closing, contact, agent)}\n\n`;
+    prompt += `═══ CLOSING SCRIPT ═══\n${resolveTemplateVars(closing, contact, agent, organization)}\n\n`;
   }
 
   // Inject contact context
@@ -848,13 +887,48 @@ async function handleGatherResult(callControlId: string, transcript: string, sta
 
 // ─── Post-Call Summary ──────────────────────────────────────────
 async function generateCallSummary(state: ClientState) {
-  if (!state.callRecordId || state.conversationHistory.length < 2) return;
+  if (!state.callRecordId) return;
+
+  // Build the transcript. Preferred source: state.conversationHistory (in-memory).
+  // Fallback: call_turns rows persisted during the call. The fallback matters
+  // for short calls that only got past the greeting before hangup — without
+  // it, the calls.transcript column stays NULL and the user can't see what
+  // Brandon actually said.
+  let transcriptLines: string[] = [];
+  if (state.conversationHistory && state.conversationHistory.length > 0) {
+    transcriptLines = state.conversationHistory.map(
+      (m) => `${m.role === "user" ? "Prospect" : "Agent"}: ${m.content}`,
+    );
+  } else {
+    const { data: turns } = await supabaseAdmin
+      .from("call_turns")
+      .select("role, content, ordinal")
+      .eq("call_id", state.callRecordId)
+      .order("ordinal", { ascending: true });
+    if (turns && turns.length > 0) {
+      transcriptLines = turns.map(
+        (t: { role: string; content: string }) =>
+          `${t.role === "user" ? "Prospect" : "Agent"}: ${t.content}`,
+      );
+    }
+  }
+
+  if (transcriptLines.length === 0) return;
+  const transcript = transcriptLines.join("\n");
+
+  // Don't bother running the summarizer for ultra-short transcripts — it's
+  // expensive and the result is just "the call started but the lead hung
+  // up before the agent could engage". Persist the raw transcript so the
+  // user can see the opener was at least delivered.
+  if (transcriptLines.length < 2) {
+    await supabaseAdmin
+      .from("calls")
+      .update({ transcript })
+      .eq("id", state.callRecordId);
+    return;
+  }
 
   try {
-    const transcript = state.conversationHistory
-      .map((m) => `${m.role === "user" ? "Prospect" : "Agent"}: ${m.content}`)
-      .join("\n");
-
     const ai = await anthropic.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 500,
@@ -875,6 +949,11 @@ async function generateCallSummary(state: ClientState) {
     console.log("[Call Summary] Generated for", state.callRecordId);
   } catch (err) {
     console.error("Call summary generation failed:", err);
+    // Even if summarization fails, persist the raw transcript
+    await supabaseAdmin
+      .from("calls")
+      .update({ transcript })
+      .eq("id", state.callRecordId);
   }
 }
 
@@ -1142,11 +1221,17 @@ export async function POST(req: NextRequest) {
 
           // Load contact for personalization
           const contact = await loadContact(state.contactId);
+          // Load organization so {{business_name}} can be substituted in the
+          // greeting + system prompt. agent.organization_id is canonical;
+          // state.organizationId is the fallback for ephemeral test calls.
+          const organization = await loadOrganization(
+            (agent.organization_id as string) || state.organizationId,
+          );
 
-          // Resolve template variables in greeting (e.g. {{contact.first_name}})
-          greeting = resolveTemplateVars(greeting, contact, agent);
+          // Resolve template variables in greeting (e.g. {{contact.first_name}}, {{business_name}})
+          greeting = resolveTemplateVars(greeting, contact, agent, organization);
 
-          systemPrompt = buildSystemPrompt(agent, contact, dir);
+          systemPrompt = buildSystemPrompt(agent, contact, dir, organization);
 
           // Parse DNC phrases from agent config
           const dncRaw = (agent.dnc_phrases as string) || "";
@@ -1203,6 +1288,29 @@ export async function POST(req: NextRequest) {
         } catch (recErr) {
           console.error("[VOICE] Failed to start recording:", recErr);
         }
+      }
+
+      // Persist Brandon's opening greeting as turn 0 in call_turns. Without
+      // this, calls that end after just the opener (Gary call: 32s, no
+      // call.transcription event ever fired) leave zero trace of what was
+      // said. Also seed the conversationHistory so the AI can self-reference
+      // the opener if the lead does respond and we get past the greeting.
+      if (greeting && state.callRecordId && state.organizationId) {
+        state.conversationHistory = state.conversationHistory ?? [];
+        state.conversationHistory.push({ role: "assistant", content: greeting });
+        supabaseAdmin
+          .from("call_turns")
+          .insert({
+            call_id: state.callRecordId,
+            organization_id: state.organizationId,
+            ordinal: 0,
+            role: "agent",
+            state_name: "opening",
+            content: greeting,
+          })
+          .then(({ error }) => {
+            if (error) console.error("[call_turns] greeting insert failed:", error.message);
+          });
       }
 
       // Speak greeting with ElevenLabs voice
