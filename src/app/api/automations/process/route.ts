@@ -83,10 +83,30 @@ export async function POST(req: NextRequest) {
       console.error('resolve_campaign_contacts failed:', resolveErr);
       return NextResponse.json({ ok: false, error: resolveErr.message }, { status: 500 });
     }
-    const resolvedIdList = (resolvedIds as { resolve_campaign_contacts: string }[] | null)
-      ?.map(r => r.resolve_campaign_contacts)
-      ?? (resolvedIds as unknown as string[] | null)
-      ?? [];
+    // RPC return shape varies between supabase-js minor releases. For
+    // RETURNS SETOF uuid the client may give us either:
+    //   1. an array of bare uuid strings:  ['uuid1', 'uuid2']
+    //   2. an array of objects keyed by function name:
+    //      [{ resolve_campaign_contacts: 'uuid1' }, ...]
+    // The earlier code only handled shape (2) and silently dropped to an
+    // array of `undefined` for shape (1) — which then fed `.in('id', ...)`
+    // and matched zero rows, producing the misleading
+    // "no uncalled contacts remain" early return on every fresh launch.
+    // Defend by accepting both.
+    const resolvedIdList: string[] = Array.isArray(resolvedIds)
+      ? resolvedIds
+          .map((r: unknown) =>
+            typeof r === 'string'
+              ? r
+              : (r as { resolve_campaign_contacts?: string } | null)?.resolve_campaign_contacts,
+          )
+          .filter((s): s is string => typeof s === 'string' && s.length > 0)
+      : [];
+    console.log(
+      '[campaign_launch] resolved %d contacts for campaign %s',
+      resolvedIdList.length,
+      campaign_id,
+    );
 
     // Now pull phone/id for those contact IDs
     let contacts: { id: string; phone: string | null }[] = [];
