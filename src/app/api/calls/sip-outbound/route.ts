@@ -337,6 +337,7 @@ export async function POST(req: NextRequest) {
       voiceSpeed: (a.voice_speed as number) ?? 1.0,
       voiceStability: (settings.voice_stability as number) ?? 0.5,
       aiTemperature: (settings.ai_temperature as number) ?? 0.7,
+      transferNumber: (settings.transfer_number as string | null) ?? null,
     };
 
     // ── 7. Number-pool rotation ────────────────────────────────
