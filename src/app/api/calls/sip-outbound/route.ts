@@ -53,30 +53,55 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 2. Auth ───────────────────────────────────────────────
-    const cookieStore = await cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } },
-    );
+    // Two paths:
+    //   (a) User session (softphone manual dial / build page test call) — cookies
+    //   (b) Campaign-launch (service-role) — header `x-campaign-launch-key`
+    //       matching SUPABASE_SERVICE_ROLE_KEY. Used by /api/automations/process
+    //       so campaigns dial via the same LiveKit SIP pipeline as softphone,
+    //       getting fast turn time + always-on recording + Deepgram transcript.
+    //       organizationId must be in the body (no profile lookup possible).
+    const campaignKey = req.headers.get("x-campaign-launch-key");
+    const isCampaignLaunch =
+      !!campaignKey
+      && !!process.env.SUPABASE_SERVICE_ROLE_KEY
+      && campaignKey === process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    let orgId: string;
+    let userRole: string | null = null;
+    let userFullName: string | null = null;
+    let userId: string | null = null;
+
+    if (isCampaignLaunch) {
+      // organizationId comes from the body in this branch — pulled out
+      // after body parse below. We set a sentinel here and re-assign later.
+      orgId = "__pending_body__";
+    } else {
+      const cookieStore = await cookies();
+      const supabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } },
+      );
+
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("organization_id, role, full_name")
+        .eq("id", user.id)
+        .single();
+
+      if (!profile?.organization_id) {
+        return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+      }
+      orgId = profile.organization_id as string;
+      userRole = (profile.role as string | null) ?? null;
+      userFullName = (profile.full_name as string | null) ?? null;
+      userId = user.id;
     }
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("organization_id, role, full_name")
-      .eq("id", user.id)
-      .single();
-
-    if (!profile?.organization_id) {
-      return NextResponse.json({ error: "Profile not found" }, { status: 404 });
-    }
-    const orgId = profile.organization_id as string;
-    const userRole = (profile.role as string | null) ?? null;
-    const userFullName = (profile.full_name as string | null) ?? null;
 
     // ── 3. Parse body ─────────────────────────────────────────
     let body: {
@@ -84,6 +109,7 @@ export async function POST(req: NextRequest) {
       contactId?: string;
       contactPhone?: string;
       campaignId?: string;
+      organizationId?: string;
       isTest?: boolean;
       overrideToken?: string;
       overrideNote?: string;
@@ -94,6 +120,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
     const { agentId, contactId, contactPhone: rawContactPhone, isTest, campaignId } = body;
+
+    // Resolve orgId for campaign-launch path now that the body is parsed.
+    if (isCampaignLaunch) {
+      if (!body.organizationId) {
+        return NextResponse.json(
+          { error: "organizationId required for campaign launch" },
+          { status: 400 },
+        );
+      }
+      orgId = body.organizationId;
+    }
+
     if (!agentId) {
       return NextResponse.json({ error: "agentId is required" }, { status: 400 });
     }
@@ -184,10 +222,15 @@ export async function POST(req: NextRequest) {
     if (c && contactId) {
       const verdict = await enforceTcpa({
         orgId,
-        userId: user.id,
+        // Campaign-launch runs from a service-role context with no user;
+        // pass an empty sentinel since enforceTcpa doesn't use userId in
+        // automated mode (no token minting, no role check).
+        userId: userId ?? "",
         userRole,
         contactId,
-        mode: "manual",
+        // Campaign launches are automated and skip the soft-warning override
+        // flow entirely — they obey TCPA but do not surface a UI prompt.
+        mode: isCampaignLaunch ? "automated" : "manual",
         overrideToken,
         supabase: supabaseAdmin,
       });
@@ -392,8 +435,9 @@ export async function POST(req: NextRequest) {
         : "Contact";
 
     // Stamp calls.metadata.tcpa_override + write the audit row when the rep
-    // placed this call over a soft-block warning.
-    if (overrideInfo) {
+    // placed this call over a soft-block warning. Override path is manual-mode
+    // only — campaign launches use automated mode and never reach here.
+    if (overrideInfo && userId) {
       await supabaseAdmin
         .from("calls")
         .update({
@@ -401,7 +445,7 @@ export async function POST(req: NextRequest) {
             tcpa_override: {
               codes: overrideInfo.codes,
               at: new Date().toISOString(),
-              by: user.id,
+              by: userId,
             },
           },
         })
@@ -410,7 +454,7 @@ export async function POST(req: NextRequest) {
       await writeOverrideAudit({
         supabase: supabaseAdmin,
         orgId,
-        userId: user.id,
+        userId: userId,
         userName: userFullName,
         contactId: (c?.id as string) ?? contactId ?? "",
         contactDisplayName: displayName,

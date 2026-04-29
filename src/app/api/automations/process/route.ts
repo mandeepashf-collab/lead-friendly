@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { enforceTcpa, nextValidTcpaWindow } from "@/lib/tcpa/enforce";
-import { dial } from "@/lib/telnyx";
 
 /**
  * POST /api/automations/process
@@ -38,23 +37,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
     }
 
-    // Pick the org's first active phone number to dial from — much better
-    // than hardcoding TELNYX_PHONE_NUMBER (which only works for one org).
-    const { data: fromRow } = await supabase
-      .from('phone_numbers')
-      .select('number')
-      .eq('organization_id', campaign.organization_id)
-      .eq('status', 'active')
-      .limit(1)
-      .maybeSingle();
-    const fromNumber = (fromRow as { number?: string } | null)?.number
-      || process.env.TELNYX_PHONE_NUMBER;
-    if (!fromNumber) {
-      return NextResponse.json(
-        { error: 'No active phone number found for this organization' },
-        { status: 400 }
-      );
-    }
+    // Note: from-number selection is delegated to /api/calls/sip-outbound,
+    // which does its own number-pool rotation. We don't need to resolve a
+    // fromNumber here anymore.
 
     // Build the set of contact IDs this campaign has already called so we
     // don't double-dial. A contact counts as "called" if a call record
@@ -177,71 +162,39 @@ export async function POST(req: NextRequest) {
       }
 
       try {
-        // Inline dial path (refactored Apr 28). Previously this did
-        // fetch(`${appUrl}/api/calls/trigger`, ...) which was unreliable
-        // on Vercel — appUrl could resolve to localhost or a stale value
-        // and the cross-route call returned 2xx without actually placing
-        // the call. Calling Telnyx directly removes that whole class of
-        // failure mode and matches what the per-call routes already do.
-        const toNumber = contact.phone.startsWith('+')
-          ? contact.phone
-          : `+1${contact.phone.replace(/\D/g, '')}`;
-
-        // Insert calls row first so the webhook can resolve it
-        const { data: callRow, error: callErr } = await supabase
-          .from('calls')
-          .insert({
-            organization_id: campaign.organization_id,
-            contact_id: contact.id,
-            campaign_id: campaign_id,
-            direction: 'outbound',
-            status: 'initiated',
-            from_number: fromNumber,
-            to_number: toNumber,
-            ai_agent_id: campaign.ai_agent_id,
-            call_mode: 'ai_agent',
-            initiated_by: 'ai_agent',
-            started_at: new Date().toISOString(),
-          })
-          .select('id')
-          .single();
-
-        if (callErr || !callRow) {
-          console.error('[campaign_launch] calls insert failed:', callErr?.message);
-          failed++;
-          continue;
-        }
-
-        const dialResult = await dial({
-          to: toNumber,
-          from: fromNumber,
-          clientState: {
-            callRecordId: callRow.id,
-            contactId: contact.id,
-            agentId: campaign.ai_agent_id,
-            organizationId: campaign.organization_id,
-            callMode: 'ai_agent',
-            conversationHistory: [],
-            turnCount: 0,
+        // Route through /api/calls/sip-outbound — the LiveKit/Deepgram
+        // pipeline. ~1-2s turn time, always-on Room Composite recording,
+        // async Deepgram nova-3 transcription. Same path the softphone
+        // uses (per docs/browser-softphone-architecture-memo.md).
+        // The earlier inline-Telnyx path produced 10-13s turn time, no
+        // recording, and no transcript — regression we just unwound.
+        const res = await fetch(`${appUrl}/api/calls/sip-outbound`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            // Service-role key matches the campaign-launch auth path on
+            // /api/calls/sip-outbound. organizationId travels in the body.
+            'x-campaign-launch-key': process.env.SUPABASE_SERVICE_ROLE_KEY || '',
           },
+          body: JSON.stringify({
+            agentId: campaign.ai_agent_id,
+            contactId: contact.id,
+            campaignId: campaign_id,
+            organizationId: campaign.organization_id,
+          }),
         });
 
-        if (!dialResult.ok) {
-          console.error('[campaign_launch] telnyx dial failed:', dialResult.status, dialResult.raw?.slice(0, 300));
-          await supabase.from('calls').update({ status: 'failed' }).eq('id', callRow.id);
+        if (res.ok) {
+          triggered++;
+        } else {
           failed++;
-          continue;
+          console.error(
+            '[campaign_launch] sip-outbound failed for contact %s: %s %s',
+            contact.id, res.status, (await res.text()).slice(0, 300),
+          );
         }
-
-        const callControlId = (dialResult.data as { data?: { call_control_id?: string } })
-          ?.data?.call_control_id;
-        await supabase
-          .from('calls')
-          .update({ telnyx_call_id: callControlId, status: 'ringing' })
-          .eq('id', callRow.id);
-
-        triggered++;
-        // 1-second inter-call spacing so we don't tail-slam Telnyx's rate limits
+        // 1-second inter-call spacing so we don't tail-slam LiveKit's
+        // SIP creation rate limits.
         await new Promise((r) => setTimeout(r, 1000));
       } catch (err) {
         console.error('Failed to trigger call for contact', contact.id, err);
