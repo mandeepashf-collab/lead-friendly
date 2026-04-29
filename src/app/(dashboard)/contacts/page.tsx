@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Search,
@@ -33,6 +33,8 @@ import { InlineCallTrigger } from "@/components/softphone/InlineCallTrigger";
 import { Settings as SettingsIcon } from "lucide-react";
 import { ManageFieldsDrawer } from "@/components/contacts/ManageFieldsDrawer";
 import { CustomFieldCell } from "@/components/contacts/CustomFieldCell";
+import { BulkChangeStatusMenu } from "@/components/contacts/BulkChangeStatusMenu";
+import { BulkAddTagMenu } from "@/components/contacts/BulkAddTagMenu";
 import {
   listCustomFields,
   type CustomFieldDefinition,
@@ -154,6 +156,12 @@ export default function ContactsPage() {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // ── Phase 1b: bulk change-status + bulk add-tag menus ────────────
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false);
+  const [tagMenuOpen, setTagMenuOpen] = useState(false);
+  const statusBtnRef = useRef<HTMLButtonElement>(null);
+  const tagBtnRef = useRef<HTMLButtonElement>(null);
+
   const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return;
     setDeleting(true);
@@ -255,8 +263,79 @@ export default function ContactsPage() {
       {selectedIds.size > 0 && (
         <div className="flex items-center gap-3 rounded-lg border border-indigo-500/20 bg-indigo-500/5 px-4 py-2">
           <span className="text-sm text-indigo-400">{selectedIds.size} selected</span>
-          <button className="text-xs text-zinc-400 hover:text-white">Change Status</button>
-          <button className="text-xs text-zinc-400 hover:text-white">Add Tag</button>
+
+          <div className="relative">
+            <button
+              ref={statusBtnRef}
+              onClick={() => { setStatusMenuOpen((v) => !v); setTagMenuOpen(false); }}
+              className={cn(
+                "text-xs hover:text-white",
+                statusMenuOpen ? "text-white" : "text-zinc-400",
+              )}
+            >
+              Change Status
+            </button>
+            {statusMenuOpen && (
+              <BulkChangeStatusMenu
+                selectedIds={Array.from(selectedIds)}
+                anchorRef={statusBtnRef}
+                onClose={() => setStatusMenuOpen(false)}
+                onSuccess={async (count, status) => {
+                  setStatusMenuOpen(false);
+                  setSelectedIds(new Set());
+                  await refetch();
+                  setCallToast({
+                    msg: `Updated ${count} contact${count === 1 ? "" : "s"} to ${status.replace(/_/g, " ")}`,
+                    ok: true,
+                  });
+                  setTimeout(() => setCallToast(null), 3000);
+                }}
+                onError={(msg) => {
+                  setStatusMenuOpen(false);
+                  setCallToast({ msg: `Status update failed: ${msg}`, ok: false });
+                  setTimeout(() => setCallToast(null), 4000);
+                }}
+              />
+            )}
+          </div>
+
+          <div className="relative">
+            <button
+              ref={tagBtnRef}
+              onClick={() => { setTagMenuOpen((v) => !v); setStatusMenuOpen(false); }}
+              className={cn(
+                "text-xs hover:text-white",
+                tagMenuOpen ? "text-white" : "text-zinc-400",
+              )}
+            >
+              Add Tag
+            </button>
+            {tagMenuOpen && (
+              <BulkAddTagMenu
+                selectedIds={Array.from(selectedIds)}
+                anchorRef={tagBtnRef}
+                onClose={() => setTagMenuOpen(false)}
+                onSuccess={async (count, tagName) => {
+                  setTagMenuOpen(false);
+                  setSelectedIds(new Set());
+                  await refetch();
+                  setCallToast({
+                    msg: count === 0
+                      ? `Tag "${tagName}" already on all selected contacts`
+                      : `Tagged ${count} contact${count === 1 ? "" : "s"} with "${tagName}"`,
+                    ok: true,
+                  });
+                  setTimeout(() => setCallToast(null), 3000);
+                }}
+                onError={(msg) => {
+                  setTagMenuOpen(false);
+                  setCallToast({ msg: `Tag failed: ${msg}`, ok: false });
+                  setTimeout(() => setCallToast(null), 4000);
+                }}
+              />
+            )}
+          </div>
+
           <button onClick={() => setConfirmDeleteOpen(true)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
           <button onClick={() => setSelectedIds(new Set())} className="ml-auto text-xs text-zinc-500 hover:text-zinc-300">Clear</button>
         </div>
