@@ -5,6 +5,7 @@ import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
   title: 'Reset password',
+  alternates: { canonical: 'https://www.leadfriendly.com/reset-password' },
 }
 
 export default function ResetPasswordLayout({ children }: { children: React.ReactNode }) {

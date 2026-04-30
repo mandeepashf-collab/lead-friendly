@@ -9,7 +9,7 @@ const SITE_URL = 'https://www.leadfriendly.com'
 const EFFECTIVE_DATE = 'April 30, 2026'
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy | Lead Friendly',
+  title: 'Privacy Policy',
   description: 'How Lead Friendly collects, uses, and protects your data.',
   alternates: { canonical: `${SITE_URL}/privacy` },
   robots: { index: true, follow: true },

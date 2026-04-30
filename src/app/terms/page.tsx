@@ -9,7 +9,7 @@ const SITE_URL = 'https://www.leadfriendly.com'
 const EFFECTIVE_DATE = 'April 30, 2026'
 
 export const metadata: Metadata = {
-  title: 'Terms of Service | Lead Friendly',
+  title: 'Terms of Service',
   description: 'Terms of Service for the Lead Friendly platform.',
   alternates: { canonical: `${SITE_URL}/terms` },
   robots: { index: true, follow: true },
