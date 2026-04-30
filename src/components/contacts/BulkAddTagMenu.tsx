@@ -123,7 +123,7 @@ export function BulkAddTagMenu({
         onError(error.message);
         return;
       }
-      const taggedCount = (data as { tagged_count: number; tag_id: string }[] | null)?.[0]?.tagged_count ?? 0;
+      const taggedCount = (data as { tagged_count: number; created_tag_id: string }[] | null)?.[0]?.tagged_count ?? 0;
       onSuccess(Number(taggedCount), name);
     } finally {
       setSubmitting(false);
