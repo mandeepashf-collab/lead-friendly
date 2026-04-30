@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Sparkles, Loader2 } from "lucide-react";
 
@@ -15,7 +14,6 @@ export default function RegisterPage() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
-  const router = useRouter();
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,7 +30,9 @@ export default function RegisterPage() {
       setLoading(false);
     } else {
       setSuccess(true);
-      setTimeout(() => router.push("/dashboard"), 1500);
+      // Full-page nav (not router.push) so freshly-set Supabase auth
+      // cookies reach the proxy. See login/page.tsx for full rationale.
+      setTimeout(() => window.location.assign("/dashboard"), 1500);
     }
   };
 

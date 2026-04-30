@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Sparkles, Loader2, CheckCircle2 } from "lucide-react";
 
@@ -11,7 +10,6 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
-  const router = useRouter();
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,7 +22,9 @@ export default function ResetPasswordPage() {
       setLoading(false);
     } else {
       setDone(true);
-      setTimeout(() => router.push("/dashboard"), 2000);
+      // Full-page nav (not router.push) so the updated session cookies
+      // reach the proxy. See login/page.tsx for full rationale.
+      setTimeout(() => window.location.assign("/dashboard"), 2000);
     }
   };
 

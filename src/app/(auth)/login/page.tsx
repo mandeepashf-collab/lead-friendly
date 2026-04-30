@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Sparkles, Loader2 } from "lucide-react";
 
@@ -15,7 +14,6 @@ export default function LoginPage() {
   const [resetSent, setResetSent] = useState(false);
   const [showReset, setShowReset] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
-  const router = useRouter();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,7 +25,13 @@ export default function LoginPage() {
       setError(error.message);
       setLoading(false);
     } else {
-      router.push("/dashboard");
+      // Full-page nav (not router.push) so freshly-set Supabase auth
+      // cookies reach the proxy on the next request. Without this, the
+      // proxy sees no session on the first RSC fetch → emits
+      // x-lf-user-is-agency-admin=0 → BrandProvider hydrates with
+      // isAgencyAdmin=false → white-label sidebar section, Workspaces,
+      // Partner billing all hidden until the user manually reloads.
+      window.location.assign("/dashboard");
     }
   };
 
