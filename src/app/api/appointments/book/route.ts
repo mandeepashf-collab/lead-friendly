@@ -290,7 +290,10 @@ export async function POST(req: NextRequest) {
   // Best-effort — helper swallows errors. Skipped automatically if contactId
   // is null. Skips terminal statuses (won/lost/do_not_contact) and is
   // idempotent on duplicate webhooks.
-  await applyAppointmentBookedStatus(supabase, contactId);
+  // Phase 3b: kind='webhook' since this route is called from voice webhooks
+  // (Retell agent worker) and from internal flows. 'webhook' covers both
+  // since the API doesn't have an authed user context (it's service-role).
+  await applyAppointmentBookedStatus(supabase, contactId, "webhook");
 
   return NextResponse.json({ appointmentId: appt.id, ...appt });
 }

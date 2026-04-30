@@ -161,7 +161,13 @@ Return ONLY valid JSON, no markdown or extra text.`,
           );
 
           // Auto-status: upgrade contact 'new' → 'contacted'. Best-effort.
-          await applyContactedOnFirstCall(supabaseAdmin, callRecord.contact_id);
+          // Phase 3b: 'system' kind — internal completion call, not an
+          // external webhook.
+          await applyContactedOnFirstCall(
+            supabaseAdmin,
+            callRecord.contact_id,
+            "system",
+          );
 
           return NextResponse.json({
             success: true,
@@ -201,7 +207,12 @@ Return ONLY valid JSON, no markdown or extra text.`,
     );
 
     // Auto-status: upgrade contact 'new' → 'contacted'. Best-effort.
-    await applyContactedOnFirstCall(supabaseAdmin, callRecord.contact_id);
+    // Phase 3b: 'system' kind — internal completion call.
+    await applyContactedOnFirstCall(
+      supabaseAdmin,
+      callRecord.contact_id,
+      "system",
+    );
 
     return NextResponse.json({
       success: true,

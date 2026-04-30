@@ -450,7 +450,28 @@ export default function ContactDetailPage() {
 
   async function handleStatusChange(newStatus: string) {
     setStatusDropdownOpen(false);
-    await saveField({ status: newStatus });
+    // Optimistic local update so the badge flips immediately.
+    const previousStatus = contact.status;
+    setContact((prev: Record<string, unknown>) => ({ ...prev, status: newStatus }));
+    // Phase 3b: route through set_contact_status RPC so the change AND
+    // the contact_events row are written atomically. Old path
+    // (saveField → plain UPDATE) emitted no event.
+    const { data, error } = await supabase.rpc("set_contact_status", {
+      p_contact_id: contactId,
+      p_status: newStatus,
+    });
+    if (error) {
+      console.error("[set_contact_status] failed:", error);
+      // Roll back the optimistic update on RPC error.
+      setContact((prev: Record<string, unknown>) => ({ ...prev, status: previousStatus }));
+      return;
+    }
+    // Sync to RPC's authoritative value (handles no-op case where RPC
+    // didn't actually change anything — e.g. rapid double-clicks).
+    const row = (data as { changed: boolean; old_status: string; new_status: string }[] | null)?.[0];
+    if (row) {
+      setContact((prev: Record<string, unknown>) => ({ ...prev, status: row.new_status }));
+    }
   }
 
   async function handleDeleteContact() {

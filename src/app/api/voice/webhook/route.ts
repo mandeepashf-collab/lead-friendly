@@ -84,9 +84,32 @@ async function handleRetellWebhook(body: Record<string, unknown>) {
           const { data: call } = await supabase.from("calls")
             .select("contact_id").eq("external_call_id", callId).single();
           if (call?.contact_id) {
+            // Phase 3b: capture pre-state so we can emit a status_changed
+            // event ONLY if status actually flipped (avoids dup events on
+            // retry / multiple DNC keywords in same call).
+            const { data: before } = await supabase.from("contacts")
+              .select("organization_id, status")
+              .eq("id", call.contact_id)
+              .single();
+
             await supabase.from("contacts")
               .update({ call_status: "dnc", status: "lost" })
               .eq("id", call.contact_id);
+
+            if (before && before.status !== "lost") {
+              await supabase.from("contact_events").insert({
+                organization_id: before.organization_id,
+                contact_id: call.contact_id,
+                event_type: "status_changed",
+                payload_json: {
+                  from: before.status,
+                  to: "lost",
+                  reason: "auto:dnc_keyword_detected",
+                },
+                created_by_user_id: null,
+                created_by_kind: "webhook",
+              });
+            }
           }
         }
       }
@@ -102,7 +125,8 @@ async function handleRetellWebhook(body: Record<string, unknown>) {
         // Runs after the DNC check above so a DNC call (which sets
         // status='lost') will not be overwritten — applyContactedOnFirstCall
         // only writes when status='new'.
-        await applyContactedOnFirstCall(supabase, call.contact_id);
+        // Phase 3b: kind='webhook' for Retell webhook context.
+        await applyContactedOnFirstCall(supabase, call.contact_id, "webhook");
       }
       break;
     }
@@ -160,7 +184,8 @@ async function handleTelnyxWebhook(body: Record<string, unknown>) {
           .update({ call_status: "called" })
           .eq("id", call.contact_id);
         // Auto-status: upgrade contact 'new' → 'contacted'. Best-effort.
-        await applyContactedOnFirstCall(supabase, call.contact_id);
+        // Phase 3b: kind='webhook' for Telnyx webhook context.
+        await applyContactedOnFirstCall(supabase, call.contact_id, "webhook");
       }
       break;
     }

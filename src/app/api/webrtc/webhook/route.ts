@@ -271,7 +271,13 @@ export async function POST(req: NextRequest) {
             .eq("id", callRecordId);
 
           // Auto-status: upgrade contact 'new' → 'contacted'. Best-effort.
-          await applyContactedOnFirstCall(supabaseAdmin, existing.contact_id);
+          // Phase 3b: 'webhook' kind so the timeline event is attributed
+          // to a webhook source rather than internal completion.
+          await applyContactedOnFirstCall(
+            supabaseAdmin,
+            existing.contact_id,
+            "webhook",
+          );
         }
         break;
       }
