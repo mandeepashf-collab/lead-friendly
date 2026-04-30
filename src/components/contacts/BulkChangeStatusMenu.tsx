@@ -15,21 +15,13 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import { CONTACT_STATUSES } from "@/lib/contacts/statuses";
 
-// All 9 valid statuses, matching the contacts_status_check constraint
-// expanded by migration 031. Colors match the existing palette used
-// elsewhere in the contacts UI (page.tsx + contact-detail.tsx).
-const STATUSES: { value: string; label: string; color: string }[] = [
-  { value: "new",                label: "New",                color: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
-  { value: "contacted",          label: "Contacted",          color: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
-  { value: "qualified",          label: "Qualified",          color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
-  { value: "proposal",           label: "Proposal",           color: "bg-purple-500/10 text-purple-400 border-purple-500/20" },
-  { value: "negotiation",        label: "Negotiation",        color: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20" },
-  { value: "appointment_booked", label: "Appointment Booked", color: "bg-violet-500/10 text-violet-400 border-violet-500/20" },
-  { value: "won",                label: "Won",                color: "bg-green-500/10 text-green-400 border-green-500/20" },
-  { value: "lost",               label: "Lost",               color: "bg-red-500/10 text-red-400 border-red-500/20" },
-  { value: "do_not_contact",     label: "Do Not Contact",     color: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20" },
-];
+// Use the canonical 9 statuses from the shared module. Phase 1c (apr 29)
+// extracted this into src/lib/contacts/statuses.ts so that all UI surfaces
+// (filter tabs, status dropdowns, this menu, the contact detail badge,
+// the workflow builder) stay in lock-step.
+const STATUSES = CONTACT_STATUSES;
 
 interface Props {
   selectedIds: string[];

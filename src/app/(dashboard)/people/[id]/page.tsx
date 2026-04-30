@@ -19,20 +19,14 @@ import {
   listCustomFields,
   type CustomFieldDefinition,
 } from "@/lib/contacts/custom-fields";
+import { CONTACT_STATUSES } from "@/lib/contacts/statuses";
 import { InlineCallTrigger } from "@/components/softphone/InlineCallTrigger";
 import { useRecordingUrl } from "@/hooks/use-recording-url";
 import { useCallTranscript } from "@/hooks/useCallTranscript";
 import { useSoftphone } from "@/components/softphone/SoftphoneContext";
 import type { Call, Conversation, Opportunity } from "@/types/database";
 
-const STATUS_OPTIONS = [
-  { value: "new", label: "New", color: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
-  { value: "contacted", label: "Contacted", color: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
-  { value: "qualified", label: "Qualified", color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
-  { value: "proposal", label: "Proposal", color: "bg-purple-500/10 text-purple-400 border-purple-500/20" },
-  { value: "won", label: "Won", color: "bg-green-500/10 text-green-400 border-green-500/20" },
-  { value: "lost", label: "Lost", color: "bg-red-500/10 text-red-400 border-red-500/20" },
-];
+const STATUS_OPTIONS = CONTACT_STATUSES;
 
 function getAvatarColor(name: string): string {
   const colors = ["indigo", "teal", "emerald", "amber", "rose", "cyan", "violet", "orange"];

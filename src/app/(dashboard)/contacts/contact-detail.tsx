@@ -11,6 +11,7 @@ import { createClient } from "@/lib/supabase/client";
 import { deleteContact } from "@/hooks/use-contacts";
 import type { Contact } from "@/types/database";
 import { useSoftphone } from "@/components/softphone/SoftphoneContext";
+import { CONTACT_STATUS_COLOR } from "@/lib/contacts/statuses";
 
 interface Props {
   contact: Contact;
@@ -19,16 +20,7 @@ interface Props {
   onDeleted: () => void;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  new: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-  contacted: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  qualified: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  proposal: "bg-purple-500/10 text-purple-400 border-purple-500/20",
-  negotiation: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
-  won: "bg-green-500/10 text-green-400 border-green-500/20",
-  lost: "bg-red-500/10 text-red-400 border-red-500/20",
-  do_not_contact: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
-};
+const STATUS_COLORS = CONTACT_STATUS_COLOR;
 
 // ── Call History sub-component ────────────────────────────────────
 function ContactCallHistory({ contactId }: { contactId: string }) {

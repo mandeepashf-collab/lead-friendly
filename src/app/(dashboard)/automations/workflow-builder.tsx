@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { createWorkflow, updateWorkflow } from "@/hooks/use-workflows";
 import type { Workflow } from "@/types/database";
+import { CONTACT_STATUS_VALUES } from "@/lib/contacts/statuses";
 
 interface WorkflowStep {
   id: string;
@@ -53,7 +54,7 @@ const ACTION_TYPES = [
   { value: "condition", label: "IF/THEN Condition", icon: MoreVertical },
 ];
 
-const STATUS_OPTIONS = ["new", "contacted", "qualified", "proposal", "won", "lost"];
+const STATUS_OPTIONS = CONTACT_STATUS_VALUES;
 
 function ActionCard({ step, onUpdate, onDelete }: {
   step: WorkflowStep;

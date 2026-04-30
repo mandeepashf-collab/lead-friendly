@@ -16,6 +16,10 @@ import { ContactDialog } from "../contacts/contact-dialog";
 import { ContactDetail } from "../contacts/contact-detail";
 import { ImportDialog } from "../contacts/import-dialog";
 import type { Contact } from "@/types/database";
+import {
+  CONTACT_STATUS_FILTER_OPTIONS,
+  getStatusOption,
+} from "@/lib/contacts/statuses";
 
 // ── Conversations imports ─────────────────────────────────────────
 import { useConversations, useMessages } from "@/hooks/use-conversations";
@@ -39,18 +43,10 @@ import { createClient } from "@/lib/supabase/client";
 // ─────────────────────────────────────────────────────────────────
 // Contacts Tab
 // ─────────────────────────────────────────────────────────────────
-const STATUS_OPTIONS = [
-  { value: "all", label: "All", color: "" },
-  { value: "new", label: "New", color: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
-  { value: "contacted", label: "Contacted", color: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
-  { value: "qualified", label: "Qualified", color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
-  { value: "proposal", label: "Proposal", color: "bg-purple-500/10 text-purple-400 border-purple-500/20" },
-  { value: "won", label: "Won", color: "bg-green-500/10 text-green-400 border-green-500/20" },
-  { value: "lost", label: "Lost", color: "bg-red-500/10 text-red-400 border-red-500/20" },
-];
+const STATUS_OPTIONS = CONTACT_STATUS_FILTER_OPTIONS;
 
 function ContactStatusBadge({ status }: { status: string }) {
-  const opt = STATUS_OPTIONS.find((s) => s.value === status) || STATUS_OPTIONS[1];
+  const opt = getStatusOption(status);
   return (
     <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium", opt.color)}>
       {opt.label}

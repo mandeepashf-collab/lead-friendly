@@ -5,6 +5,7 @@ import { X, Loader2, User, Mail, Phone, Building2, MapPin, Globe, Tag } from "lu
 import { createContact, updateContact } from "@/hooks/use-contacts";
 import { setContactTags } from "@/hooks/use-contact-tags";
 import type { Contact } from "@/types/database";
+import { CONTACT_STATUS_VALUES } from "@/lib/contacts/statuses";
 
 interface Props {
   contact: Contact | null;
@@ -12,9 +13,7 @@ interface Props {
   onSaved: () => void;
 }
 
-const STATUS_OPTIONS = [
-  "new", "contacted", "qualified", "proposal", "negotiation", "won", "lost", "do_not_contact",
-];
+const STATUS_OPTIONS = CONTACT_STATUS_VALUES;
 
 const SOURCE_OPTIONS = [
   "website", "referral", "cold_call", "csv_import", "facebook", "google", "linkedin", "other",
