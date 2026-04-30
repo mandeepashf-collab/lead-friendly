@@ -105,6 +105,107 @@ export default function ContactsPage() {
     })
     .filter((d): d is CustomFieldDefinition => d !== undefined);
 
+  // ── Built-in column definitions (Phase 2c bug fix) ──────────────
+  // Single source of truth for built-in column rendering. The same shape
+  // drives both the <th> headers and the <td> cells, so they stay in
+  // lockstep. The "name" column is locked-on; saveTablePreferences
+  // defensively re-injects it if missing or hidden.
+  const BUILT_IN_COLUMNS: Record<
+    string,
+    {
+      label: string;
+      sortable?: boolean;
+      sortKey?: string;
+      renderCell: (c: Contact) => React.ReactNode;
+    }
+  > = {
+    name: {
+      label: "Contact",
+      sortable: true,
+      sortKey: "first_name",
+      renderCell: (c) => (
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-600/20 text-xs font-medium text-indigo-400">
+            {getInitials(c)}
+          </div>
+          <span className="text-sm font-medium text-white group-hover:text-indigo-300 transition-colors">
+            {formatName(c)}
+          </span>
+        </div>
+      ),
+    },
+    email: {
+      label: "Email",
+      sortable: true,
+      renderCell: (c) =>
+        c.email ? (
+          <span className="flex items-center gap-1.5 text-sm text-zinc-400">
+            <Mail className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate max-w-[180px]">{c.email}</span>
+          </span>
+        ) : (
+          <span className="text-sm text-zinc-600">—</span>
+        ),
+    },
+    phone: {
+      label: "Phone",
+      renderCell: (c) =>
+        c.phone ? (
+          <span className="flex items-center gap-1.5 text-sm text-zinc-400">
+            <Phone className="h-3.5 w-3.5 shrink-0" />
+            {c.phone}
+          </span>
+        ) : (
+          <span className="text-sm text-zinc-600">—</span>
+        ),
+    },
+    company_name: {
+      label: "Company",
+      renderCell: (c) =>
+        c.company_name ? (
+          <span className="flex items-center gap-1.5 text-sm text-zinc-400">
+            <Building2 className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate max-w-[140px]">{c.company_name}</span>
+          </span>
+        ) : (
+          <span className="text-sm text-zinc-600">—</span>
+        ),
+    },
+    status: {
+      label: "Status",
+      sortable: true,
+      renderCell: (c) => <StatusBadge status={c.status} />,
+    },
+    source: {
+      label: "Source",
+      renderCell: (c) => (
+        <span className="text-sm capitalize text-zinc-500">
+          {c.source?.replace(/_/g, " ") || "—"}
+        </span>
+      ),
+    },
+    created_at: {
+      label: "Added",
+      sortable: true,
+      renderCell: (c) => (
+        <span className="text-sm text-zinc-500">
+          {c.created_at ? new Date(c.created_at).toLocaleDateString() : "—"}
+        </span>
+      ),
+    },
+  };
+
+  // Visible built-in columns, in pref order. Anything in columnPrefs not
+  // recognized as a built-in is skipped (e.g. custom: keys, or stale prefs
+  // referencing removed fields).
+  const visibleBuiltIns = columnPrefs
+    .filter((c) => c.visible && !c.field_key.startsWith("custom:"))
+    .map((c) => ({
+      field_key: c.field_key,
+      def: BUILT_IN_COLUMNS[c.field_key],
+    }))
+    .filter((c): c is { field_key: string; def: typeof BUILT_IN_COLUMNS[string] } => c.def !== undefined);
+
   const openCallModal = useCallback((contact: Contact) => {
     if (!contact.phone) {
       setCallToast({ msg: "No phone number on this contact", ok: false });
@@ -355,25 +456,20 @@ export default function ContactsPage() {
                     className="h-4 w-4 appearance-none rounded border border-zinc-500 bg-zinc-800 cursor-pointer hover:border-indigo-400 checked:border-indigo-500 checked:bg-indigo-600 checked:bg-[url('data:image/svg+xml;utf8,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2016%2016%22%3E%3Cpath%20fill=%22none%22%20stroke=%22white%22%20stroke-width=%222%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22%20d=%22M3.5%208.5l3%203%206-7%22/%3E%3C/svg%3E')] checked:bg-center checked:bg-no-repeat"
                   />
                 </th>
-                {[
-                  { key: "first_name", label: "Contact", sortable: true },
-                  { key: "email", label: "Email", sortable: true },
-                  { key: "phone", label: "Phone", sortable: false },
-                  { key: "company_name", label: "Company", sortable: false },
-                  { key: "status", label: "Status", sortable: true },
-                  { key: "source", label: "Source", sortable: false },
-                  { key: "created_at", label: "Added", sortable: true },
-                ].map((col) => (
-                  <th key={col.key} className="px-4 py-3 text-left">
-                    {col.sortable ? (
-                      <button onClick={() => toggleSort(col.key)} className="flex items-center gap-1 text-xs font-medium uppercase text-zinc-500 hover:text-zinc-300">
-                        {col.label}<ArrowUpDown className="h-3 w-3" />
-                      </button>
-                    ) : (
-                      <span className="text-xs font-medium uppercase text-zinc-500">{col.label}</span>
-                    )}
-                  </th>
-                ))}
+                {visibleBuiltIns.map(({ field_key, def }) => {
+                  const sortKey = def.sortKey ?? field_key;
+                  return (
+                    <th key={field_key} className="px-4 py-3 text-left">
+                      {def.sortable ? (
+                        <button onClick={() => toggleSort(sortKey)} className="flex items-center gap-1 text-xs font-medium uppercase text-zinc-500 hover:text-zinc-300">
+                          {def.label}<ArrowUpDown className="h-3 w-3" />
+                        </button>
+                      ) : (
+                        <span className="text-xs font-medium uppercase text-zinc-500">{def.label}</span>
+                      )}
+                    </th>
+                  );
+                })}
                 {/* Phase 2b: dynamic custom-field columns */}
                 {visibleCustomColumns.map((def) => (
                   <th key={`custom-${def.id}`} className="px-4 py-3 text-left">
@@ -385,13 +481,13 @@ export default function ContactsPage() {
             </thead>
             <tbody className="divide-y divide-zinc-800/50">
               {loading ? (
-                <tr><td colSpan={9 + visibleCustomColumns.length} className="px-4 py-16 text-center">
+                <tr><td colSpan={2 + visibleBuiltIns.length + visibleCustomColumns.length} className="px-4 py-16 text-center">
                   <div className="flex items-center justify-center gap-2 text-zinc-500">
                     <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-indigo-500" />Loading...
                   </div>
                 </td></tr>
               ) : contacts.length === 0 ? (
-                <tr><td colSpan={9 + visibleCustomColumns.length} className="px-4 py-16 text-center">
+                <tr><td colSpan={2 + visibleBuiltIns.length + visibleCustomColumns.length} className="px-4 py-16 text-center">
                   <div className="flex flex-col items-center gap-3 text-zinc-600">
                     <UserPlus className="h-10 w-10" />
                     <p className="text-sm font-medium">{search || statusFilter !== "all" ? "No contacts match your filters" : "No contacts yet"}</p>
@@ -419,31 +515,14 @@ export default function ContactsPage() {
                       className="h-4 w-4 appearance-none rounded border border-zinc-500 bg-zinc-800 cursor-pointer hover:border-indigo-400 checked:border-indigo-500 checked:bg-indigo-600 checked:bg-[url('data:image/svg+xml;utf8,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2016%2016%22%3E%3Cpath%20fill=%22none%22%20stroke=%22white%22%20stroke-width=%222%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22%20d=%22M3.5%208.5l3%203%206-7%22/%3E%3C/svg%3E')] checked:bg-center checked:bg-no-repeat"
                     />
                   </td>
-                  {/* Name cell — explicit navigate */}
-                  <td className="px-4 py-3 cursor-pointer" onClick={goToContact}>
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-600/20 text-xs font-medium text-indigo-400">{getInitials(contact)}</div>
-                      <span className="text-sm font-medium text-white group-hover:text-indigo-300 transition-colors">{formatName(contact)}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 cursor-pointer" onClick={goToContact}>
-                    {contact.email ? (
-                      <span className="flex items-center gap-1.5 text-sm text-zinc-400"><Mail className="h-3.5 w-3.5 shrink-0" /><span className="truncate max-w-[180px]">{contact.email}</span></span>
-                    ) : <span className="text-sm text-zinc-600">—</span>}
-                  </td>
-                  <td className="px-4 py-3 cursor-pointer" onClick={goToContact}>
-                    {contact.phone ? (
-                      <span className="flex items-center gap-1.5 text-sm text-zinc-400"><Phone className="h-3.5 w-3.5 shrink-0" />{contact.phone}</span>
-                    ) : <span className="text-sm text-zinc-600">—</span>}
-                  </td>
-                  <td className="px-4 py-3 cursor-pointer" onClick={goToContact}>
-                    {contact.company_name ? (
-                      <span className="flex items-center gap-1.5 text-sm text-zinc-400"><Building2 className="h-3.5 w-3.5 shrink-0" /><span className="truncate max-w-[140px]">{contact.company_name}</span></span>
-                    ) : <span className="text-sm text-zinc-600">—</span>}
-                  </td>
-                  <td className="px-4 py-3 cursor-pointer" onClick={goToContact}><StatusBadge status={contact.status} /></td>
-                  <td className="px-4 py-3 cursor-pointer" onClick={goToContact}><span className="text-sm capitalize text-zinc-500">{contact.source?.replace(/_/g, " ") || "—"}</span></td>
-                  <td className="px-4 py-3 cursor-pointer" onClick={goToContact}><span className="text-sm text-zinc-500">{new Date(contact.created_at).toLocaleDateString()}</span></td>
+                  {/* Built-in column cells (Phase 2c bug fix): driven by
+                      visibleBuiltIns derived from columnPrefs, in lockstep
+                      with the <th> row above. */}
+                  {visibleBuiltIns.map(({ field_key, def }) => (
+                    <td key={`cell-${field_key}`} className="px-4 py-3 cursor-pointer" onClick={goToContact}>
+                      {def.renderCell(contact)}
+                    </td>
+                  ))}
                   {/* Phase 2b: custom-field columns */}
                   {visibleCustomColumns.map((def) => {
                     const blob = (contact as Contact & { custom_fields?: Record<string, unknown> | null }).custom_fields;
