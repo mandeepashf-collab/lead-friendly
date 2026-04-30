@@ -1,6 +1,83 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { Check, Sparkles, Zap, Building2 } from "lucide-react";
 import { SubscribeButton } from "./subscribe-button";
+import { JsonLd } from "@/components/seo/json-ld";
+import { ensureMasterBrandOr404 } from "@/lib/seo/ensure-master";
+
+const SITE_URL = "https://www.leadfriendly.com";
+
+export const metadata: Metadata = {
+  title: "Pricing — AI sales calling CRM with built-in voice agents",
+  description:
+    "Simple, transparent pricing for AI-powered sales calling. Starter, Pro, and Agency plans. 14-day free trial. No credit card required.",
+  alternates: { canonical: `${SITE_URL}/pricing` },
+  openGraph: {
+    title: "Lead Friendly Pricing",
+    description:
+      "AI sales calling, built into your CRM. Starter, Pro, and Agency plans. 14-day free trial.",
+    url: `${SITE_URL}/pricing`,
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Lead Friendly Pricing",
+    description:
+      "AI sales calling, built into your CRM. Starter, Pro, and Agency plans.",
+  },
+};
+
+// FAQPage JSON-LD. Mirrors the four visible Q&As below — both surfaces must
+// match (Google penalizes JSON-LD that doesn't reflect on-page content).
+//
+// NOTE: Offer / SoftwareApplication.offers schema is intentionally NOT here
+// yet — pricing is being finalized. Wrong prices in JSON-LD can leak into
+// Google Knowledge Graph and AI search results. Ships in a follow-up patch
+// once pricing is locked.
+function FaqSchema() {
+  return (
+    <JsonLd
+      data={{
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        mainEntity: [
+          {
+            "@type": "Question",
+            name: "What counts as an AI call minute?",
+            acceptedAnswer: {
+              "@type": "Answer",
+              text: "One minute of an active AI voice call with a contact. Unanswered calls and voicemails don't count.",
+            },
+          },
+          {
+            "@type": "Question",
+            name: "Do I need to sign up for Telnyx or ElevenLabs separately?",
+            acceptedAnswer: {
+              "@type": "Answer",
+              text: "No — voice calling, phone numbers, and AI voices are built in. One subscription covers everything.",
+            },
+          },
+          {
+            "@type": "Question",
+            name: "Can I bring my own phone number?",
+            acceptedAnswer: {
+              "@type": "Answer",
+              text: "Yes. You can port your existing number to Lead Friendly or add numbers purchased through your Telnyx account.",
+            },
+          },
+          {
+            "@type": "Question",
+            name: "What happens if I go over my AI minute limit?",
+            acceptedAnswer: {
+              "@type": "Answer",
+              text: "Calls continue — overage is billed at $0.05/min. We'll notify you when you reach 90% of your plan limit.",
+            },
+          },
+        ],
+      }}
+    />
+  );
+}
 
 // Stripe Price IDs pulled from env vars — configured per plan.
 // Set these in Vercel: STRIPE_PRICE_STARTER, STRIPE_PRICE_PRO, STRIPE_PRICE_AGENCY
@@ -67,9 +144,12 @@ const plans = [
   },
 ];
 
-export default function PricingPage() {
+export default async function PricingPage() {
+  await ensureMasterBrandOr404();
+
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
+      <FaqSchema />
       {/* Nav */}
       <header className="border-b border-zinc-800 px-6 py-4 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2">

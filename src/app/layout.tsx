@@ -1,12 +1,13 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { headers } from "next/headers";
 import { WhiteLabelLayout } from "@/components/agency/WhiteLabelLayout";
 import { BrandProvider } from "@/contexts/BrandContext";
 import { ToastProvider } from "@/lib/toast";
-import { loadOrgBrand } from "@/lib/branding/load";
+import { getRequestBrand } from "@/lib/branding/get-request-brand";
 import { brandToCssText } from "@/lib/branding/css-vars";
-import { DEFAULT_BRAND } from "@/lib/schemas/stage3";
+import { isMasterBrandRequest, SITE_URL } from "@/lib/seo/master-brand";
+import { OrganizationSchema } from "@/components/seo/json-ld";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Stage 3.2 — Root layout
@@ -16,12 +17,93 @@ import { DEFAULT_BRAND } from "@/lib/schemas/stage3";
 //   2. <BrandProvider> (Stage 3.2 — reads server-injected __LF_BRAND__)
 //   3. <WhiteLabelLayout> (legacy agency white-label — reads middleware headers)
 // Do NOT remove any of the three.
+//
+// SEO concerns (added Apr 30):
+//   - generateMetadata branches on isMasterBrandRequest():
+//       * master (leadfriendly.com / localhost / *.vercel.app) → full SEO
+//         metadata, "%s | Lead Friendly" title template, OrganizationSchema.
+//       * tenant (any custom_domain) → portalName-driven title, noindex,
+//         no OrganizationSchema, no canonical to leadfriendly.com.
+//   - getRequestBrand() is React-cache()-wrapped so generateMetadata and
+//     the layout body share one resolved brand per request.
 // ────────────────────────────────────────────────────────────────────────────
 
-export const metadata: Metadata = {
-  title: "AI-Powered Sales CRM",
-  description:
-    "AI-powered voice sales platform with automated outreach and intelligent CRM.",
+export async function generateMetadata(): Promise<Metadata> {
+  const [{ brand }, isMaster] = await Promise.all([
+    getRequestBrand(),
+    isMasterBrandRequest(),
+  ]);
+
+  if (isMaster) {
+    return {
+      metadataBase: new URL(SITE_URL),
+      title: {
+        default:
+          "Lead Friendly — AI-powered sales calling, built into your CRM",
+        template: "%s | Lead Friendly",
+      },
+      description:
+        "AI voice agents, telephony, and CRM in one platform. No Retell. No Twilio. Everything you need to close more deals — included.",
+      applicationName: "Lead Friendly",
+      authors: [{ name: "Lead Friendly" }],
+      generator: "Next.js",
+      keywords: [
+        "AI sales CRM",
+        "AI voice agent",
+        "AI cold calling",
+        "AI SDR",
+        "sales automation",
+        "voice AI",
+        "CRM with calling",
+      ],
+      alternates: { canonical: "/" },
+      openGraph: {
+        type: "website",
+        siteName: "Lead Friendly",
+        locale: "en_US",
+        url: SITE_URL,
+        title:
+          "Lead Friendly — AI-powered sales calling, built into your CRM",
+        description:
+          "AI voice agents, telephony, and CRM in one platform. Everything you need to close more deals — included.",
+      },
+      twitter: {
+        card: "summary_large_image",
+        title: "Lead Friendly — AI sales calling, built into your CRM",
+        description:
+          "AI voice agents, telephony, and CRM in one platform. No Retell. No Twilio.",
+      },
+      robots: {
+        index: true,
+        follow: true,
+        googleBot: {
+          index: true,
+          follow: true,
+          "max-image-preview": "large",
+          "max-snippet": -1,
+          "max-video-preview": -1,
+        },
+      },
+    };
+  }
+
+  // White-label tenant. Their portal, their brand — Lead Friendly stays out
+  // of the title, OG, canonical, and the search index entirely.
+  return {
+    title: {
+      default: brand.portalName,
+      template: `%s | ${brand.portalName}`,
+    },
+    description: brand.portalName,
+    robots: { index: false, follow: false },
+    icons: brand.faviconUrl ? { icon: brand.faviconUrl } : undefined,
+  };
+}
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#0f172a",
 };
 
 export default async function RootLayout({
@@ -29,15 +111,15 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Server-side brand resolution. Three sources, in priority order:
-  //   1. Active impersonation session (Stage 3.3) — middleware injects
-  //      x-lf-impersonation-active + x-lf-acting-as-org-id when a valid
-  //      lf_impersonation_token cookie resolves via get_active_impersonation.
-  //      In this case we render the SUB-account's brand, not the agency's.
-  //   2. Custom-domain middleware header `x-lf-org-id` — set when a verified
-  //      custom domain resolves to an org (Stage 3.2 canonical path).
-  //   3. Neither — default DEFAULT_BRAND ships; client BrandProvider then
-  //      fetches /api/org/[id]/brand using the session's own org.
+  // Brand + effective org id come from getRequestBrand() (cache()-wrapped, so
+  // generateMetadata above and this body share one resolved brand per request).
+  // Source priority: impersonation > custom domain > brand preview > default.
+  const [{ brand, effectiveOrgId, isBrandPreview }, isMaster] =
+    await Promise.all([getRequestBrand(), isMasterBrandRequest()]);
+
+  // The remaining headers below carry per-request session/role state that the
+  // hydration script forwards to the client. They are NOT part of brand
+  // resolution and stay inline.
   const hdrs = await headers();
 
   const impersonationActive = hdrs.get("x-lf-impersonation-active") === "1";
@@ -47,8 +129,6 @@ export default async function RootLayout({
   const actorEmail = hdrs.get("x-lf-actor-email");
   const impersonationExpiresAt = hdrs.get("x-lf-impersonation-expires-at");
 
-  const orgIdFromHost = hdrs.get("x-lf-org-id");
-
   // Stage 3.3.1 — role flags from middleware. Drives sub-account visibility
   // gating (sidebar agency nav, Branding tab, PoweredBy override).
   const userIsAgencyAdmin = hdrs.get("x-lf-user-is-agency-admin") === "1";
@@ -57,30 +137,6 @@ export default async function RootLayout({
   // Stage 3.5.2 — platform-staff flag from middleware. Drives the Platform
   // header link + the Alt+Shift+P shortcut + the /platform/* layout gate.
   const userIsPlatformStaff = hdrs.get("x-lf-platform-staff") === "1";
-
-  // Stage 3.4 — opt-in brand preview header. Set by middleware only when the
-  // lf_brand_preview cookie is "1" AND the user is an agency admin AND we're
-  // on a platform host. Carries the user's own organization_id.
-  const previewOrgId = hdrs.get("x-lf-brand-preview-org-id");
-
-  // Pick brand source. Priority:
-  //   impersonation > custom domain > brand preview > platform default.
-  // Custom domain wins over preview so visiting a verified custom domain
-  // shows that domain's brand even with the preview cookie set.
-  const effectiveOrgId = impersonationActive && actingAsOrgId
-    ? actingAsOrgId
-    : (orgIdFromHost ?? previewOrgId ?? null);
-
-  // True only when the brand was resolved via the preview cookie — not via
-  // impersonation or custom-domain. Drives the persistent banner.
-  const isBrandPreview =
-    !(impersonationActive && actingAsOrgId) &&
-    !orgIdFromHost &&
-    !!previewOrgId;
-
-  const brand = effectiveOrgId
-    ? await loadOrgBrand(effectiveOrgId)
-    : DEFAULT_BRAND;
 
   const cssText = brandToCssText(brand);
 
@@ -117,8 +173,11 @@ export default async function RootLayout({
   return (
     <html lang="en" className="dark">
       <head>
-        {brand.faviconUrl && <link rel="icon" href={brand.faviconUrl} />}
-        <title>{brand.portalName}</title>
+        {/* Title and favicon are driven by generateMetadata above:
+            - master → "Lead Friendly — …" / static src/app/favicon.ico
+            - tenant → brand.portalName        / brand.faviconUrl via metadata.icons
+            Do NOT re-add a literal <title> or <link rel="icon"> here — that
+            would reintroduce the duplicate-tag issue the SEO audit flagged. */}
         <style dangerouslySetInnerHTML={{ __html: cssText }} />
         <script dangerouslySetInnerHTML={{ __html: hydrationScript }} />
       </head>
@@ -130,6 +189,7 @@ export default async function RootLayout({
           fontFamily: "var(--lf-body-font, 'Inter', system-ui, sans-serif)",
         }}
       >
+        {isMaster && <OrganizationSchema />}
         <BrandProvider>
           <ToastProvider>
             <WhiteLabelLayout>{children}</WhiteLabelLayout>
