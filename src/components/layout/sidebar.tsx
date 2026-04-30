@@ -52,7 +52,7 @@ const sections: SidebarSection[] = [
     label: 'Sales',
     items: [
       { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-      { label: 'Contacts', href: '/people', icon: Users, matchPaths: ['/people', '/communications'] },
+      { label: 'Contacts', href: '/contacts', icon: Users, matchPaths: ['/contacts', '/people'] },
       { label: 'Pipeline', href: '/opportunities', icon: Target, matchPaths: ['/opportunities'] },
       { label: 'Calendar', href: '/calendar', icon: Calendar },
     ],

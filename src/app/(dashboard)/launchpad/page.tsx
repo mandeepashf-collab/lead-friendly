@@ -69,7 +69,7 @@ export default function LaunchpadPage() {
             title: "Add your first contact",
             description: "Import or create your first lead to get started",
             icon: Users,
-            href: "/people",
+            href: "/contacts",
             buttonLabel: "Add Contact",
             isComplete: (contactsCount || 0) > 0,
           },
@@ -133,7 +133,7 @@ export default function LaunchpadPage() {
       } catch (error) {
         console.error("Error fetching setup status:", error);
         setSteps([
-          { id: 1, title: "Add your first contact", description: "Import or create your first lead to get started", icon: Users, href: "/people", buttonLabel: "Add Contact", isComplete: false },
+          { id: 1, title: "Add your first contact", description: "Import or create your first lead to get started", icon: Users, href: "/contacts", buttonLabel: "Add Contact", isComplete: false },
           { id: 2, title: "Configure your AI agent", description: "Set up an AI agent to automate your outreach", icon: Bot, href: "/ai-agents/build", buttonLabel: "Build Agent", isComplete: false },
           { id: 3, title: "Set your business hours", description: "Define when your AI agent should be active", icon: Clock, href: "/settings", buttonLabel: "Set Hours", isComplete: false },
           { id: 4, title: "Connect your calendar", description: "Sync your calendar for better scheduling", icon: Calendar, href: "/calendar", buttonLabel: "Connect", isComplete: false },
