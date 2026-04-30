@@ -144,6 +144,12 @@ export interface Appointment {
   end_time: string;
   status: string;
   booked_by: string;
+  // created_at / updated_at exist in the DB (verified Apr 30 via
+  // information_schema). They were missing from this type, which broke
+  // src/lib/contacts/activity-feed.ts when it tried to read created_at
+  // for chronological sorting. Both columns are nullable in the DB.
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface Workflow {
