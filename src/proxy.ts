@@ -59,6 +59,7 @@ const PUBLIC_PREFIXES = [
   '/api/appointments/book',
   '/api/cron/',             // Vercel cron jobs — auth via x-cron-secret header (Phase 1.7)
   '/api/billing/verify-stripe-config',  // Phase 2 diagnostic — auth via x-cron-secret; delete route after verification
+  '/api/billing/wallet/auto-reload',  // Phase 4.5 — auth via x-internal-secret header
 ] as const
 
 // MUST mirror src/app/(dashboard)/ subdirectories. Adding a new dashboard

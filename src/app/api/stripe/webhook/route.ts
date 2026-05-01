@@ -16,6 +16,8 @@ import { getTierByStripePriceId, type TierId, type BillingInterval } from "@/con
  *   - customer.subscription.deleted        → cancellation at period end
  *   - invoice.payment_succeeded            → payment success (keep active)
  *   - invoice.payment_failed               → payment failure (mark past_due)
+ *   - payment_intent.succeeded             → Phase 4.5 wallet auto-reload success
+ *   - payment_intent.payment_failed        → Phase 4.5 wallet auto-reload failure
  *
  * The org row needs these columns:
  *   stripe_customer_id         text
@@ -279,6 +281,62 @@ export async function POST(req: NextRequest) {
           .from("organizations")
           .update({ subscription_status: "active" })
           .eq("id", orgId);
+        break;
+      }
+
+      // ── Phase 4.5: wallet auto-reload payment intents ─────
+      // The auto-reload route fires off_session Payment Intents and writes
+      // the result synchronously via complete_reload_attempt. These webhook
+      // handlers are redundancy: if the sync response was lost (network blip,
+      // function timeout), the webhook arrives and finishes the same DB write.
+      // complete_reload_attempt is idempotent — second call returns
+      // already_completed=true without re-crediting.
+      case "payment_intent.succeeded": {
+        const pi = event.data.object as Stripe.PaymentIntent;
+        const meta = pi.metadata ?? {};
+        if (meta.purpose !== 'wallet_reload') break;  // not ours
+        const attemptId = meta.attempt_id;
+        if (!attemptId) {
+          console.warn('[STRIPE WEBHOOK] wallet_reload PI missing attempt_id:', pi.id);
+          break;
+        }
+        const { error } = await supabase.rpc('complete_reload_attempt', {
+          p_attempt_id: attemptId,
+          p_succeeded: true,
+          p_stripe_payment_intent_id: pi.id,
+          p_stripe_payment_method_id:
+            (typeof pi.payment_method === 'string' ? pi.payment_method : pi.payment_method?.id) ?? null,
+          p_stripe_error_code: null,
+          p_stripe_error_message: null,
+        });
+        if (error) {
+          console.error('[STRIPE WEBHOOK] wallet_reload succeeded RPC error:', error.message);
+        }
+        break;
+      }
+
+      case "payment_intent.payment_failed": {
+        const pi = event.data.object as Stripe.PaymentIntent;
+        const meta = pi.metadata ?? {};
+        if (meta.purpose !== 'wallet_reload') break;  // not ours
+        const attemptId = meta.attempt_id;
+        if (!attemptId) {
+          console.warn('[STRIPE WEBHOOK] wallet_reload PI missing attempt_id:', pi.id);
+          break;
+        }
+        const lastErr = pi.last_payment_error;
+        const { error } = await supabase.rpc('complete_reload_attempt', {
+          p_attempt_id: attemptId,
+          p_succeeded: false,
+          p_stripe_payment_intent_id: pi.id,
+          p_stripe_payment_method_id:
+            (typeof pi.payment_method === 'string' ? pi.payment_method : pi.payment_method?.id) ?? null,
+          p_stripe_error_code: lastErr?.code ?? lastErr?.type ?? 'payment_failed',
+          p_stripe_error_message: lastErr?.message ?? 'Payment intent failed',
+        });
+        if (error) {
+          console.error('[STRIPE WEBHOOK] wallet_reload failed RPC error:', error.message);
+        }
         break;
       }
 
