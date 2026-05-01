@@ -34,6 +34,7 @@ const PUBLIC_EXACT = new Set<string>([
   // ensureMasterBrandOr404() to 404 these on tenant hosts.
   '/',
   '/pricing',
+  '/founding',  // Phase 7: exclusive Founding 100 launch page (noindex; not in sitemap)
   '/terms',
   '/privacy',
   '/robots.txt',
@@ -60,6 +61,7 @@ const PUBLIC_PREFIXES = [
   '/api/cron/',             // Vercel cron jobs — auth via x-cron-secret header (Phase 1.7)
   '/api/billing/verify-stripe-config',  // Phase 2 diagnostic — auth via x-cron-secret; delete route after verification
   '/api/billing/wallet/auto-reload',  // Phase 4.5 — auth via x-internal-secret header
+  '/api/founding/counter',  // Phase 7 — public founding spots counter for /founding page
 ] as const
 
 // MUST mirror src/app/(dashboard)/ subdirectories. Adding a new dashboard

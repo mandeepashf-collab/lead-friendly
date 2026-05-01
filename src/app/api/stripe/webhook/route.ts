@@ -10,7 +10,7 @@ import { getTierByStripePriceId, type TierId, type BillingInterval } from "@/con
  * to Stripe lifecycle events. Requires STRIPE_WEBHOOK_SECRET to verify signatures.
  *
  * Events handled:
- *   - checkout.session.completed           → new sub activated
+ *   - checkout.session.completed           → new sub activated; Phase 7 claims founding spot if tier='founding'
  *   - customer.subscription.created        → sub created (redundant with checkout)
  *   - customer.subscription.updated        → plan change / payment status
  *   - customer.subscription.deleted        → cancellation at period end
@@ -197,6 +197,35 @@ export async function POST(req: NextRequest) {
           .from("organizations")
           .update(updatePayload)
           .eq("id", orgId);
+
+        // Phase 7: if this is a Founding tier checkout, atomically claim
+        // a spot in the founding_member_counter and assign a member number
+        // (1..100). Fire-and-log on failure — if the counter is sold out
+        // by the time the webhook fires (race with another concurrent
+        // checkout), the customer's tier is still set to 'founding' but
+        // they don't get a member number. Manual triage / refund for that
+        // edge case until we automate it.
+        if (tierResolution?.tierId === 'founding') {
+          const { data: claimResult, error: claimErr } = await supabase.rpc(
+            'claim_founding_spot',
+            { p_org_id: orgId },
+          );
+          if (claimErr) {
+            console.error(
+              `[STRIPE WEBHOOK] founding spot claim error for org=${orgId}:`,
+              claimErr.message,
+            );
+          } else if (claimResult && !claimResult.success) {
+            console.warn(
+              `[STRIPE WEBHOOK] founding spot claim failed for org=${orgId}:`,
+              claimResult.reason,
+            );
+          } else if (claimResult?.success) {
+            console.log(
+              `[STRIPE WEBHOOK] founding spot claimed: org=${orgId}, member_number=${claimResult.member_number}, remaining=${claimResult.spots_remaining}`,
+            );
+          }
+        }
 
         // Phase 1.7: seed period_starts_at/ends_at and zero minute counter
         // for the very first billing cycle.
