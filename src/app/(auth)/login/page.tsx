@@ -5,6 +5,40 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Sparkles, Loader2 } from "lucide-react";
 
+/**
+ * Resolve where to send the user after a successful sign-in. If the URL
+ * contains ?priceId=...&tierId=...&interval=..., kick off Stripe Checkout
+ * before going to /dashboard. Otherwise plain /dashboard.
+ *
+ * Falls back to /dashboard on any failure (network, missing params, etc).
+ */
+async function postLoginRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  const priceId = params.get("priceId");
+  const tierId = params.get("plan");
+  const interval = params.get("interval");
+
+  if (priceId && tierId && interval) {
+    try {
+      const res = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priceId, tierId, interval }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
+    } catch {
+      /* fallthrough */
+    }
+  }
+
+  // Default — full-page nav so cookies reach the proxy.
+  window.location.assign("/dashboard");
+}
+
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -31,20 +65,32 @@ export default function LoginPage() {
       // x-lf-user-is-agency-admin=0 → BrandProvider hydrates with
       // isAgencyAdmin=false → white-label sidebar section, Workspaces,
       // Partner billing all hidden until the user manually reloads.
-      window.location.assign("/dashboard");
+      //
+      // Phase 4: if user came from /pricing with checkout intent, jump
+      // straight to Stripe Checkout instead of dashboard.
+      await postLoginRedirect();
     }
   };
 
   const handleGoogle = async () => {
     setGoogleLoading(true);
     const supabase = createClient();
+    // Phase 4: if checkout intent in URL, preserve it through OAuth round-trip
+    // by passing /pricing?... back to ourselves so the user re-clicks the
+    // (now-signed-in) subscribe button. Simpler than threading through OAuth
+    // state.
+    const params = new URLSearchParams(window.location.search);
+    const hasCheckoutIntent = params.has("priceId");
+    const next = hasCheckoutIntent
+      ? `/pricing?${params.toString()}`
+      : "/dashboard";
     await supabase.auth.signInWithOAuth({
-  provider: "google",
-  options: { 
-    redirectTo: `${window.location.origin}/auth/callback`,
-    skipBrowserRedirect: false,
-  },
-});
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+        skipBrowserRedirect: false,
+      },
+    });
   };
 
   const handleForgotPassword = async (e: React.FormEvent) => {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
+import { getTierByStripePriceId, type TierId, type BillingInterval } from "@/config/pricing";
 
 /**
  * POST /api/stripe/webhook
@@ -93,6 +94,65 @@ export async function POST(req: NextRequest) {
     return new Date(Math.min(...ends) * 1000).toISOString();
   };
 
+  // Mirror of subPeriodEnd for current_period_start. Used to seed
+  // current_period_starts_at in the new pricing/wallet schema (Phase 1.7).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const subPeriodStart = (sub: any): string | null => {
+    const items = sub?.items?.data || [];
+    if (items.length === 0) return null;
+    const starts: number[] = items
+      .map((it: { current_period_start?: number }) => it.current_period_start)
+      .filter((v: unknown): v is number => typeof v === "number");
+    if (starts.length === 0) return null;
+    return new Date(Math.min(...starts) * 1000).toISOString();
+  };
+
+  // Helper: call the reset_minute_period RPC. Idempotent on the DB side,
+  // so safe to call from any subscription event that includes a period.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const maybeRollPeriod = async (
+    orgId: string,
+    sub: any,
+    source: 'stripe_webhook' | 'initial_subscription',
+  ): Promise<void> => {
+    const periodStart = subPeriodStart(sub);
+    const periodEnd = subPeriodEnd(sub);
+    if (!periodStart || !periodEnd) return;
+
+    const { error } = await supabase.rpc('reset_minute_period', {
+      p_org_id: orgId,
+      p_new_period_starts_at: periodStart,
+      p_new_period_ends_at: periodEnd,
+      p_source: source,
+      p_stripe_subscription_id: sub.id ?? null,
+    });
+    if (error) {
+      console.error(`[stripe webhook] reset_minute_period failed for org=${orgId}:`, error.message);
+      // Don't throw -- legacy column update still happened, billing audit is non-blocking.
+    }
+  };
+
+  // Phase 4: resolve tier_id + billing_interval from a subscription. Prefers
+  // metadata stamped at checkout time; falls back to priceId lookup against
+  // pricing.ts so we still get the right tier even if metadata is missing
+  // (older subs created before Phase 4 wired metadata, manual Stripe Dashboard
+  // creation, etc).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const resolveTierFromSub = (sub: any): { tierId: TierId; interval: BillingInterval } | null => {
+    const meta = sub?.metadata ?? {};
+    const metaTier = meta.tier_id as TierId | undefined;
+    const metaInterval = meta.billing_interval as BillingInterval | undefined;
+    if (metaTier && metaInterval) {
+      return { tierId: metaTier, interval: metaInterval };
+    }
+
+    const priceId = sub?.items?.data?.[0]?.price?.id as string | undefined;
+    if (!priceId) return null;
+    const matched = getTierByStripePriceId(priceId);
+    if (!matched) return null;
+    return { tierId: matched.tier.id, interval: matched.interval };
+  };
+
   try {
     switch (event.type) {
       case "checkout.session.completed": {
@@ -106,24 +166,42 @@ export async function POST(req: NextRequest) {
         let priceId: string | null = null;
         let periodEnd: string | null = null;
         let status: string = "active";
+        let tierResolution: { tierId: TierId; interval: BillingInterval } | null = null;
         if (session.subscription) {
           const sub = await stripe.subscriptions.retrieve(session.subscription as string);
           subId = sub.id;
           priceId = sub.items.data[0]?.price.id ?? null;
           periodEnd = subPeriodEnd(sub);
           status = sub.status;
+          tierResolution = resolveTierFromSub(sub);
+        }
+
+        // Build the update object. Phase 4: also write tier + billing_interval
+        // (the new pricing schema columns) when we can resolve them from the sub.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const updatePayload: Record<string, any> = {
+          stripe_customer_id: session.customer as string,
+          stripe_subscription_id: subId,
+          subscription_status: status,
+          subscription_plan_id: priceId,
+          subscription_current_period_end: periodEnd,
+        };
+        if (tierResolution) {
+          updatePayload.tier = tierResolution.tierId;
+          updatePayload.billing_interval = tierResolution.interval;
         }
 
         await supabase
           .from("organizations")
-          .update({
-            stripe_customer_id: session.customer as string,
-            stripe_subscription_id: subId,
-            subscription_status: status,
-            subscription_plan_id: priceId,
-            subscription_current_period_end: periodEnd,
-          })
+          .update(updatePayload)
           .eq("id", orgId);
+
+        // Phase 1.7: seed period_starts_at/ends_at and zero minute counter
+        // for the very first billing cycle.
+        if (session.subscription) {
+          const sub = await stripe.subscriptions.retrieve(session.subscription as string);
+          await maybeRollPeriod(orgId, sub, 'initial_subscription');
+        }
         break;
       }
 
@@ -134,15 +212,32 @@ export async function POST(req: NextRequest) {
           || await orgIdForCustomer(sub.customer as string);
         if (!orgId) break;
 
+        const tierResolution = resolveTierFromSub(sub);
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const updatePayload: Record<string, any> = {
+          stripe_subscription_id: sub.id,
+          subscription_status: sub.status,
+          subscription_plan_id: sub.items.data[0]?.price.id ?? null,
+          subscription_current_period_end: subPeriodEnd(sub),
+        };
+        if (tierResolution) {
+          updatePayload.tier = tierResolution.tierId;
+          updatePayload.billing_interval = tierResolution.interval;
+        }
+
         await supabase
           .from("organizations")
-          .update({
-            stripe_subscription_id: sub.id,
-            subscription_status: sub.status,
-            subscription_plan_id: sub.items.data[0]?.price.id ?? null,
-            subscription_current_period_end: subPeriodEnd(sub),
-          })
+          .update(updatePayload)
           .eq("id", orgId);
+
+        // Phase 1.7: roll the minute period if Stripe just rotated the
+        // subscription onto a new billing cycle. RPC is idempotent against
+        // duplicate events so it's safe to call on every update.
+        const source = event.type === "customer.subscription.created"
+          ? "initial_subscription"
+          : "stripe_webhook";
+        await maybeRollPeriod(orgId, sub, source as 'stripe_webhook' | 'initial_subscription');
         break;
       }
 
@@ -150,9 +245,16 @@ export async function POST(req: NextRequest) {
         const sub = event.data.object as Stripe.Subscription;
         const orgId = await orgIdForCustomer(sub.customer as string);
         if (!orgId) break;
+        // Phase 4: revert tier to solo when sub is fully cancelled. Don't touch
+        // billing_interval (let the next checkout re-set it). This blocks
+        // outbound calls via wallet-guard's solo_trial_exhausted path once
+        // they've used 30 trial minutes.
         await supabase
           .from("organizations")
-          .update({ subscription_status: "canceled" })
+          .update({
+            subscription_status: "canceled",
+            tier: "solo",
+          })
           .eq("id", orgId);
         break;
       }

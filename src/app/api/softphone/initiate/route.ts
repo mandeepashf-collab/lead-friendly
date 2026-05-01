@@ -11,6 +11,7 @@ import { buildCallRecordingEgress } from "@/lib/livekit/egress";
 import { createSipParticipant } from "@/lib/livekit/sip";
 import { enforceTcpa } from "@/lib/tcpa/enforce";
 import { writeOverrideAudit } from "@/lib/tcpa/audit";
+import { checkOutboundCallAllowed } from "@/lib/billing/wallet-guard";
 
 /**
  * POST /api/softphone/initiate
@@ -119,6 +120,20 @@ export async function POST(req: NextRequest) {
     }
 
     const orgId = profile.organization_id;
+
+    // ── Wallet guard: block if trial exhausted, wallet blocked, or sub canceled ──
+    // Phase 1.6 — runs before contact + number lookups so a blocked org gets
+    // a fast 402 rather than burning DB reads and TCPA evaluation.
+    const guard = await checkOutboundCallAllowed({
+      organizationId: orgId,
+      supabase: supabaseAdmin,
+    });
+    if (!guard.allowed) {
+      return NextResponse.json(
+        { error: guard.message, reason: guard.reason },
+        { status: guard.httpStatus },
+      );
+    }
 
     // ── Validate contact belongs to org & has a phone ───────
     const { data: contact, error: contactErr } = await supabaseAdmin

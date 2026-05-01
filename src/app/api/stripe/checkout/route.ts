@@ -1,19 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@/lib/supabase/server";
+import { getTierByStripePriceId, type TierId, type BillingInterval } from "@/config/pricing";
 
 /**
  * POST /api/stripe/checkout
  *
  * Creates a Stripe Checkout Session for a subscription and returns the URL.
  * The browser redirects to that URL. When the user completes checkout Stripe
- * sends a webhook to /api/stripe/webhook which flips the org's subscription_status.
+ * sends a webhook to /api/stripe/webhook which:
+ *   - Sets organizations.tier (from metadata)
+ *   - Sets organizations.billing_interval (from metadata)
+ *   - Seeds current_period_starts_at / ends_at via Phase 1.7 maybeRollPeriod
  *
- * Body: { priceId: string }   // Stripe Price ID (one of our plan tiers)
+ * Body: { priceId: string; tierId: TierId; interval: BillingInterval }
  *
- * This endpoint requires the user to be signed in — we use their org to
- * deduplicate Stripe customers (one per org) via the stripe_customer_id
- * column on the organizations table.
+ * Validates priceId against pricing.ts so unknown / spoofed price IDs
+ * are rejected (defense-in-depth — Stripe Checkout would also reject,
+ * but failing early gives a clean error).
  */
 export async function POST(req: NextRequest) {
   if (!process.env.STRIPE_SECRET_KEY) {
@@ -23,16 +27,45 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let body: { priceId?: string } = {};
+  let body: { priceId?: string; tierId?: TierId; interval?: BillingInterval } = {};
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const { priceId } = body;
+  const { priceId, tierId, interval } = body;
   if (!priceId) {
     return NextResponse.json({ error: "priceId required" }, { status: 400 });
   }
+
+  // Validate priceId belongs to a known tier. Rejects spoofed price IDs
+  // before they reach Stripe.
+  const matched = getTierByStripePriceId(priceId);
+  if (!matched) {
+    return NextResponse.json(
+      { error: "Unknown priceId — does not match any configured tier" },
+      { status: 400 }
+    );
+  }
+
+  // If client supplied tierId/interval, verify they agree with the priceId
+  // mapping. Mismatch is a developer bug or a tampered request — reject.
+  if (tierId && tierId !== matched.tier.id) {
+    return NextResponse.json(
+      { error: `tierId mismatch: priceId resolves to ${matched.tier.id}, got ${tierId}` },
+      { status: 400 }
+    );
+  }
+  if (interval && interval !== matched.interval) {
+    return NextResponse.json(
+      { error: `interval mismatch: priceId resolves to ${matched.interval}, got ${interval}` },
+      { status: 400 }
+    );
+  }
+
+  // Canonical values come from the priceId lookup, never from client input.
+  const canonicalTierId = matched.tier.id;
+  const canonicalInterval = matched.interval;
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -82,23 +115,35 @@ export async function POST(req: NextRequest) {
     process.env.NEXT_PUBLIC_APP_URL ||
     "https://www.leadfriendly.com";
 
+  // Metadata that flows into the webhook handlers. Both the session itself
+  // and the resulting subscription get stamped — webhook reads from sub.metadata
+  // since that's what fires on every renewal/update.
+  const sharedMetadata = {
+    organization_id: org.id,
+    user_id: user.id,
+    tier_id: canonicalTierId,
+    billing_interval: canonicalInterval,
+  };
+
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer: customerId,
+    client_reference_id: org.id,
     line_items: [{ price: priceId, quantity: 1 }],
     allow_promotion_codes: true,
-    success_url: `${origin}/billing?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${origin}/billing?stripe=cancel`,
+    payment_method_collection: "always",
+    // Auto-tax: requires Stripe Tax to be enabled in Stripe Dashboard
+    // (Settings → Tax → Activate). If not enabled, this is a no-op so safe
+    // to leave on. customer_update.address required for Stripe to determine
+    // the customer's tax jurisdiction from billing address.
+    automatic_tax: { enabled: true },
+    customer_update: { address: "auto", name: "auto" },
+    success_url: `${origin}/dashboard?subscription=success&tier=${canonicalTierId}&interval=${canonicalInterval}`,
+    cancel_url: `${origin}/pricing?subscription=cancel`,
     subscription_data: {
-      metadata: {
-        organization_id: org.id,
-        user_id: user.id,
-      },
+      metadata: sharedMetadata,
     },
-    metadata: {
-      organization_id: org.id,
-      user_id: user.id,
-    },
+    metadata: sharedMetadata,
   });
 
   return NextResponse.json({ url: session.url, sessionId: session.id });

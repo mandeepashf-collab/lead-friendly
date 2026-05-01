@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { createRoom, createAccessToken, dispatchAgent, getLiveKitUrl } from "@/lib/livekit/server";
 import { buildCallRecordingEgress } from "@/lib/livekit/egress";
 import { substituteVariables, type PromptVarContext } from "@/lib/prompt-vars";
+import { checkOutboundCallAllowed } from "@/lib/billing/wallet-guard";
 
 /**
  * POST /api/webrtc/create-call
@@ -66,6 +67,20 @@ export async function POST(req: NextRequest) {
 
     if (!agentId) {
       return NextResponse.json({ error: "agentId is required" }, { status: 400 });
+    }
+
+    // ── Wallet guard: block if trial exhausted, wallet blocked, or sub canceled ──
+    // Phase 1.6 — runs before agent load to fail fast and avoid burning a
+    // LiveKit room or DB row when the org isn't allowed to call.
+    const guard = await checkOutboundCallAllowed({
+      organizationId: orgId,
+      supabase: supabaseAdmin,
+    });
+    if (!guard.allowed) {
+      return NextResponse.json(
+        { error: guard.message, reason: guard.reason },
+        { status: guard.httpStatus },
+      );
     }
 
     // ── Rate limit: max 5 concurrent WebRTC calls per org ─────

@@ -3,11 +3,10 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
-  CreditCard, Zap, Phone, Users, TrendingUp, FileText, ExternalLink,
+  CreditCard, Zap, TrendingUp, FileText, ExternalLink,
   DollarSign, Plus, ArrowUpRight, Trash2, Edit2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { createClient } from "@/lib/supabase/client";
 import { useInvoices, deleteInvoice } from "@/hooks/use-payments";
 import { InvoiceDialog } from "../payments/invoice-dialog";
 import type { Invoice } from "@/types/database";
@@ -36,99 +35,56 @@ const PAYMENT_STATUS_TABS = ["all", "draft", "sent", "paid", "overdue"] as const
 
 /* ─── Overview Tab ─── */
 function OverviewTab() {
-  const supabase = createClient();
-  const [usage, setUsage] = useState({
-    aiMinutesUsed: 0,
-    aiMinutesLimit: 500,
-    callsThisMonth: 0,
-    totalContacts: 0,
-  });
-  const [planInfo, setPlanInfo] = useState({ name: "Growth", price: 297 });
-  const [invoices, setInvoices] = useState<{ id: string; date: string; description: string; amount: string; status: string }[]>([]);
+  const [usage, setUsage] = useState({ used: 0, limit: 30, tier: 'solo', overageMinutes: 0 });
+  const [wallet, setWallet] = useState<{ balance_cents: number; auto_reload_enabled: boolean } | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         const aiRes = await fetch("/api/ai-minutes");
         const aiData = await aiRes.json();
-        setUsage(prev => ({
-          ...prev,
-          aiMinutesUsed: aiData.used || 0,
-          aiMinutesLimit: aiData.limit || 500,
-        }));
-
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data: agency } = await supabase
-            .from("agencies")
-            .select("id, plan, name")
-            .eq("user_id", user.id)
-            .single();
-
-          const startOfMonth = new Date();
-          startOfMonth.setDate(1);
-          startOfMonth.setHours(0, 0, 0, 0);
-          const { count: callCount } = await supabase
-            .from("calls")
-            .select("*", { count: "exact", head: true })
-            .gte("created_at", startOfMonth.toISOString());
-
-          const { count: contactCount } = await supabase
-            .from("contacts")
-            .select("*", { count: "exact", head: true });
-
-          setUsage(prev => ({
-            ...prev,
-            callsThisMonth: callCount || 0,
-            totalContacts: contactCount || 0,
-          }));
-
-          if (agency) {
-            const planName = agency.plan === "wl_growth" ? "Growth" : agency.plan === "wl_agency" ? "Agency" : "Starter";
-            const planPrice = agency.plan === "wl_growth" ? 297 : agency.plan === "wl_agency" ? 497 : 97;
-            setPlanInfo({ name: planName, price: planPrice });
-          }
-
-          const { data: invoiceData } = await supabase
-            .from("agency_invoices")
-            .select("*")
-            .eq("agency_id", agency?.id || "")
-            .order("created_at", { ascending: false });
-
-          if (invoiceData && invoiceData.length > 0) {
-            setInvoices(invoiceData.map((inv: any) => ({
-              id: inv.id,
-              date: new Date(inv.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }),
-              description: `${inv.plan_name || planInfo.name} Plan — ${new Date(inv.created_at).toLocaleDateString("en-US", { year: "numeric", month: "long" })}`,
-              amount: `$${(inv.amount / 100).toFixed(2)}`,
-              status: inv.status || "Paid",
-            })));
-          }
+        setUsage({
+          used: aiData.used || 0,
+          limit: aiData.limit || 30,
+          tier: aiData.tier || 'solo',
+          overageMinutes: aiData.overageMinutes || 0,
+        });
+        if (aiData.wallet) {
+          setWallet(aiData.wallet);
         }
       } catch (error) {
         console.error("Error fetching billing data:", error);
       }
     };
     fetchData();
-  }, [supabase]);
+  }, []);
 
-  const minutesPct = usage.aiMinutesLimit > 0 ? Math.min((usage.aiMinutesUsed / usage.aiMinutesLimit) * 100, 100) : 0;
+  const minutesPct = usage.limit > 0 ? Math.min((usage.used / usage.limit) * 100, 100) : 0;
   const minutesColor = minutesPct >= 90 ? "bg-red-500" : minutesPct >= 70 ? "bg-amber-500" : "bg-indigo-600";
+  const tierLabel = usage.tier === 'solo' ? 'Free Trial'
+    : usage.tier.charAt(0).toUpperCase() + usage.tier.slice(1);
 
   return (
     <div className="space-y-6 max-w-3xl">
       {/* Current plan */}
       <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-6">
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-3 mb-1">
-              <span className="text-lg font-bold text-white">{planInfo.name} Plan</span>
-              <span className="rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-0.5 text-xs font-semibold text-indigo-400">Active</span>
+              <span className="text-lg font-bold text-white">{tierLabel}</span>
+              {usage.tier !== 'solo' && (
+                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-400">Active</span>
+              )}
             </div>
-            <p className="text-sm text-zinc-400">${planInfo.price}/month · Renews on {new Date(new Date().getFullYear(), new Date().getMonth() + 1, 11).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}</p>
+            <p className="text-sm text-zinc-400">
+              {usage.tier === 'solo'
+                ? '30-minute trial · Upgrade to a paid plan to unlock more'
+                : 'Manage your plan and billing on the pricing page'}
+            </p>
           </div>
-          <Link href="/pricing" className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
-            <TrendingUp className="h-4 w-4" />Upgrade Plan
+          <Link href="/pricing" className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 whitespace-nowrap">
+            <TrendingUp className="h-4 w-4" />
+            {usage.tier === 'solo' ? 'View plans' : 'Manage plan'}
           </Link>
         </div>
       </div>
@@ -141,78 +97,49 @@ function OverviewTab() {
             <div className="flex items-center gap-2 text-sm text-zinc-300">
               <Zap className="h-4 w-4 text-indigo-400" />AI Call Minutes
             </div>
-            <span className="text-sm font-medium text-white">{usage.aiMinutesUsed} / {usage.aiMinutesLimit} min</span>
+            <span className="text-sm font-medium text-white">{usage.used} / {usage.limit} min</span>
           </div>
           <div className="h-2 rounded-full bg-zinc-800">
             <div className={`h-2 rounded-full transition-all ${minutesColor}`} style={{ width: `${minutesPct}%` }} />
           </div>
-          <p className="text-xs text-zinc-500">{usage.aiMinutesLimit - usage.aiMinutesUsed} minutes remaining · Overage billed at $0.15/min</p>
+          {usage.overageMinutes > 0 ? (
+            <p className="text-xs text-amber-400">
+              {usage.overageMinutes} overage minutes this period · drawn from wallet
+            </p>
+          ) : (
+            <p className="text-xs text-zinc-500">{Math.max(0, usage.limit - usage.used)} minutes remaining</p>
+          )}
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          {[
-            { label: "Calls This Month", value: usage.callsThisMonth, icon: Phone, color: "text-blue-400" },
-            { label: "Total Contacts", value: usage.totalContacts, icon: Users, color: "text-emerald-400" },
-          ].map(s => (
-            <div key={s.label} className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-              <div className="flex items-center gap-2 text-xs text-zinc-500 mb-1">
-                <s.icon className={`h-3.5 w-3.5 ${s.color}`} />{s.label}
+
+        {/* Wallet */}
+        {wallet && (
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4 mt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-zinc-500 mb-1">Prepaid wallet</p>
+                <p className="text-2xl font-bold text-white">${(wallet.balance_cents / 100).toFixed(2)}</p>
               </div>
-              <p className="text-2xl font-bold text-white">{s.value}</p>
+              <div className="text-right">
+                <p className="text-xs text-zinc-500 mb-1">Auto-reload</p>
+                <p className={`text-sm font-medium ${wallet.auto_reload_enabled ? 'text-emerald-400' : 'text-zinc-400'}`}>
+                  {wallet.auto_reload_enabled ? 'Enabled' : 'Disabled'}
+                </p>
+              </div>
             </div>
-          ))}
-        </div>
+            <p className="text-xs text-zinc-500 mt-3">Wallet management coming in /settings/billing (Phase 5)</p>
+          </div>
+        )}
       </div>
 
-      {/* Payment method */}
+      {/* Stripe link */}
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-white">Payment Method</h2>
-          <a href="https://dashboard.stripe.com/settings/billing/overview" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs text-indigo-400 hover:text-indigo-300">
+          <a href="https://dashboard.stripe.com/billing" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs text-indigo-400 hover:text-indigo-300">
             <ExternalLink className="h-3.5 w-3.5" />Manage in Stripe
           </a>
         </div>
         <p className="text-sm text-zinc-400">Manage your payment method securely in Stripe.</p>
-      </div>
-
-      {/* Invoice history */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-white">Invoice History</h2>
-        </div>
-        {invoices.length === 0 ? (
-          <p className="text-sm text-zinc-400">No invoices yet</p>
-        ) : (
-          <div className="rounded-lg border border-zinc-800 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-zinc-800">
-                  <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Date</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Description</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Amount</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {invoices.map((inv) => (
-                  <tr key={inv.id} className="border-t border-zinc-800/50 hover:bg-zinc-800/20">
-                    <td className="px-4 py-3 text-zinc-400">{inv.date}</td>
-                    <td className="px-4 py-3 text-white">{inv.description}</td>
-                    <td className="px-4 py-3 text-white font-medium">{inv.amount}</td>
-                    <td className="px-4 py-3">
-                      <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-400">{inv.status}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <button className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300">
-                        <FileText className="h-3.5 w-3.5" />PDF
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
     </div>
   );
