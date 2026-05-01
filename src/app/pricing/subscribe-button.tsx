@@ -1,85 +1,111 @@
-"use client";
+'use client'
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { Loader2 } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+import type { TierId, BillingInterval } from '@/config/pricing'
 
 interface Props {
-  planName: string;
-  priceId: string | null;
-  isPopular: boolean;
-  buttonLabel?: string;
+  tierId: TierId
+  priceId: string | null
+  interval: BillingInterval
+  isFeatured: boolean
+  buttonLabel?: string
 }
 
 /**
- * Subscribe button — handles two flows:
- *   1. If user is NOT signed in, redirect to /register?plan=X so we can
- *      preserve intent through the signup flow.
- *   2. If user IS signed in, POST to /api/stripe/checkout and redirect to
- *      the hosted Stripe Checkout page.
+ * Subscribe button — handles three cases:
+ *   1. priceId === null (Solo / no Stripe Price configured): redirect
+ *      to /register?plan=X&interval=Y so signup flow preserves intent.
+ *   2. User signed in: POST to /api/stripe/checkout with priceId,
+ *      redirect to hosted Stripe Checkout.
+ *   3. User signed out: redirect to /register with plan + interval +
+ *      priceId in query so registration flow can complete checkout
+ *      after they make an account.
  *
- * If priceId is null (env vars not configured), fall back to /register.
+ * One button = one Stripe Price ID. Monthly and Annual buttons are
+ * separate components on the parent card. No client-side toggle state.
  */
-export function SubscribeButton({ planName, priceId, isPopular, buttonLabel }: Props) {
-  const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export function SubscribeButton({
+  tierId,
+  priceId,
+  interval,
+  isFeatured,
+  buttonLabel,
+}: Props) {
+  const router = useRouter()
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleClick = async () => {
+    setLoading(true)
+    setError(null)
+
+    // No priceId — redirect to register (Solo trial or env-var-missing fallback)
     if (!priceId) {
-      router.push(`/register?plan=${planName.toLowerCase()}`);
-      return;
+      router.push(`/register?plan=${tierId}&interval=${interval}`)
+      return
     }
 
-    setLoading(true);
-    setError(null);
     try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
+      const supabase = createClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      // Signed out — push them to register with intent preserved
       if (!user) {
-        router.push(`/register?plan=${planName.toLowerCase()}&priceId=${priceId}`);
-        return;
+        router.push(
+          `/register?plan=${tierId}&interval=${interval}&priceId=${encodeURIComponent(priceId)}`,
+        )
+        return
       }
 
-      const res = await fetch("/api/stripe/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ priceId }),
-      });
-      const data = await res.json();
+      // Signed in — go straight to Stripe Checkout
+      const res = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ priceId, tierId, interval }),
+      })
+      const data = await res.json()
+
       if (!res.ok) {
-        setError(data.error || "Failed to start checkout");
-        setLoading(false);
-        return;
+        setError(data.error || 'Failed to start checkout')
+        setLoading(false)
+        return
       }
       if (data.url) {
-        window.location.href = data.url;
+        window.location.href = data.url
       } else {
-        setError("No checkout URL returned");
-        setLoading(false);
+        setError('No checkout URL returned')
+        setLoading(false)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Checkout failed");
-      setLoading(false);
+      setError(err instanceof Error ? err.message : 'Checkout failed')
+      setLoading(false)
     }
-  };
+  }
+
+  const baseClass =
+    'w-full rounded-lg py-2.5 text-xs font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-60'
+  const variantClass = isFeatured
+    ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+    : 'border border-zinc-700 text-zinc-200 hover:bg-zinc-800'
 
   return (
     <>
       <button
         onClick={handleClick}
         disabled={loading}
-        className={`w-full rounded-xl py-3 text-sm font-semibold transition-colors mb-8 flex items-center justify-center gap-2 ${
-          isPopular
-            ? "bg-indigo-600 text-white hover:bg-indigo-700"
-            : "border border-zinc-700 text-zinc-300 hover:bg-zinc-800"
-        } disabled:opacity-60`}
+        className={`${baseClass} ${variantClass}`}
       >
-        {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-        {loading ? "Redirecting…" : (buttonLabel || "Start free trial")}
+        {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        {loading ? 'Redirecting…' : buttonLabel || 'Subscribe'}
       </button>
-      {error && <p className="text-xs text-red-400 text-center -mt-6 mb-4">{error}</p>}
+      {error && (
+        <p className="text-[10px] text-red-400 text-center mt-1">{error}</p>
+      )}
     </>
-  );
+  )
 }

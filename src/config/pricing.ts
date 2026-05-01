@@ -31,12 +31,7 @@ export interface PricingTier {
   // Bundle
   includedMinutes: number
   overageRate: number              // $/min, e.g. 0.14
-
-  // Capacity
-  seatsIncluded: number
-  phoneNumbersIncluded: number     // -1 = unlimited
-  activeAgentsIncluded: number     // -1 = unlimited
-  subAccountsIncluded: number      // 0 = not available, -1 = unlimited
+  effectiveRatePerMinute: number   // $/min effective at full annual bundle (display only)
 
   // Differentiators
   whiteLabel: boolean
@@ -68,10 +63,7 @@ export const TIER_SOLO: PricingTier = {
   annualSavings: 0,
   includedMinutes: 30,
   overageRate: 0,
-  seatsIncluded: 1,
-  phoneNumbersIncluded: 1,
-  activeAgentsIncluded: 1,
-  subAccountsIncluded: 0,
+  effectiveRatePerMinute: 0,
   whiteLabel: false,
   prioritySupport: false,
   dedicatedCSM: false,
@@ -91,10 +83,7 @@ export const TIER_STARTER: PricingTier = {
   annualSavings: 12,
   includedMinutes: 350,
   overageRate: 0.16,
-  seatsIncluded: 1,
-  phoneNumbersIncluded: 2,
-  activeAgentsIncluded: 3,
-  subAccountsIncluded: 0,
+  effectiveRatePerMinute: 0.106,
   whiteLabel: false,
   prioritySupport: false,
   dedicatedCSM: false,
@@ -116,10 +105,7 @@ export const TIER_PRO: PricingTier = {
   annualSavings: 25,
   includedMinutes: 750,
   overageRate: 0.14,
-  seatsIncluded: 5,
-  phoneNumbersIncluded: 10,
-  activeAgentsIncluded: -1,
-  subAccountsIncluded: 0,
+  effectiveRatePerMinute: 0.099,
   whiteLabel: false,
   prioritySupport: true,
   dedicatedCSM: false,
@@ -141,10 +127,7 @@ export const TIER_AGENCY: PricingTier = {
   annualSavings: 39,
   includedMinutes: 1250,
   overageRate: 0.12,
-  seatsIncluded: 25,
-  phoneNumbersIncluded: -1,
-  activeAgentsIncluded: -1,
-  subAccountsIncluded: 25,
+  effectiveRatePerMinute: 0.096,
   whiteLabel: true,
   prioritySupport: true,
   dedicatedCSM: false,
@@ -166,10 +149,7 @@ export const TIER_FOUNDING: PricingTier = {
   annualSavings: 17,
   includedMinutes: 750,
   overageRate: 0.14,
-  seatsIncluded: 5,
-  phoneNumbersIncluded: 10,
-  activeAgentsIncluded: -1,
-  subAccountsIncluded: 0,
+  effectiveRatePerMinute: 0.076,
   whiteLabel: false,
   prioritySupport: true,
   dedicatedCSM: false,
@@ -183,23 +163,20 @@ export const TIER_FOUNDING: PricingTier = {
 export const TIER_CUSTOM: PricingTier = {
   id: 'custom',
   name: 'Custom',
-  tagline: 'Volume pricing from $0.07/min for high-volume teams',
+  tagline: 'For high-volume teams with custom requirements',
   monthlyPrice: 0,
   annualPrice: 0,
   monthlyEquivalent: 0,
   annualSavings: 0,
   includedMinutes: 0,
   overageRate: 0,
-  seatsIncluded: -1,
-  phoneNumbersIncluded: -1,
-  activeAgentsIncluded: -1,
-  subAccountsIncluded: -1,
+  effectiveRatePerMinute: 0,
   whiteLabel: true,
   prioritySupport: true,
   dedicatedCSM: true,
   isFeatured: false,
   isVisible: true,
-  ctaLabel: 'Book a call \u2192',
+  ctaLabel: 'Talk to us',
   ctaAction: 'contact',
 }
 
@@ -430,32 +407,43 @@ export const ALL_FEATURES_INCLUDED = [
 export const PRICING_PAGE_COPY = {
   hero: {
     title: 'Pay for what fits.',
-    subtitle: 'Real prices. No platform fees. Cancel anytime.',
+    subtitle: 'Real prices. Choose monthly or annual on each plan.',
   },
-  toggleLabels: {
-    monthly: 'Monthly',
-    annual: 'Annual \u2014 Save 25% \u2713',
+  bundledBanner: {
+    title: 'Bundled pricing — what you see is what you pay',
+    body: 'Most voice AI platforms charge $0.14+ per minute once you stack telephony, voice synthesis, and LLM costs — and you still need a separate CRM. Our pricing is bundled, with a full CRM included free (contacts, pipeline, calendar, recordings, transcripts, AI summaries).',
+    tagline: 'Predictable monthly bills. No surprise charges. No usage stacking.',
   },
   walletExplainer:
     'Your plan includes a monthly minute bundle. Once you exceed it, calls draw from your prepaid wallet at the overage rate. Wallet auto-tops-up from your card on file when balance hits $10 (default $50 top-up). You can disable auto-reload anytime.',
-  transparencyLine:
-    'Real cost to deliver: ~$0.06/min. We charge $0.13\u2013$0.16/min effective \u2014 that 50\u201360% margin keeps us profitable without taking VC money. Minutes reset on the 1st each month. No rollover. Cancel anytime.',
+  addOns: {
+    phoneNumbers: {
+      title: 'Phone numbers',
+      tag: 'All paid plans',
+      body: 'From $3/mo. Pick area code, instant provisioning.',
+    },
+    customDomains: {
+      title: 'Custom domains',
+      tag: 'Agency only',
+      body: 'From $18/yr. Auto-connects your branded subdomain.',
+    },
+  },
   faq: [
     {
       q: 'Do unused minutes roll over?',
-      a: 'No \u2014 your minute bundle resets on the 1st of each month. This keeps pricing predictable for both of us.',
+      a: 'No — your minute bundle resets at the start of each billing period. This keeps pricing predictable for both of us.',
     },
     {
       q: 'What happens if I exceed my bundle?',
-      a: 'Overage minutes draw from your prepaid wallet at your tier\u2019s per-minute rate ($0.16 Starter, $0.14 Pro, $0.12 Agency). Wallet auto-tops-up from your card when balance gets low \u2014 default $10 trigger, $50 reload. You can adjust both in settings.',
+      a: 'Overage minutes draw from your prepaid wallet at your tier\'s per-minute rate ($0.16 Starter, $0.14 Pro, $0.12 Agency). Wallet auto-tops-up from your card when balance gets low — default $10 trigger, $50 reload. You can adjust both in settings.',
     },
     {
       q: 'What if my wallet runs out?',
-      a: 'If your wallet hits $0 and auto-reload fails (or is disabled), all outbound calls are blocked until you top up manually or auto-reload succeeds. We never charge you more than what\u2019s in your wallet.',
+      a: 'If your wallet hits $0 and auto-reload fails (or is disabled), all outbound calls are blocked until you top up manually or auto-reload succeeds. We never charge you more than what\'s in your wallet.',
     },
     {
       q: 'Can I cancel anytime?',
-      a: 'Yes. Monthly subscriptions cancel at the end of the current period. Annual subscriptions are non-refundable after 30 days but won\u2019t auto-renew if cancelled.',
+      a: 'Yes. Monthly subscriptions cancel at the end of the current period. Annual subscriptions are non-refundable after 30 days but won\'t auto-renew if cancelled.',
     },
     {
       q: 'Do you offer a free trial?',
@@ -463,11 +451,15 @@ export const PRICING_PAGE_COPY = {
     },
     {
       q: 'Do all plans get all features?',
-      a: 'Yes. Starter, Pro, and Agency all get the full product. Tiers differ only on minute volume, user seats, and white-label availability.',
+      a: 'Yes — full CRM, AI agents, pipeline, recordings, transcription, calendar integrations, and more are included on every paid plan. Tiers differ on minute volume, overage rate, and white-label availability.',
     },
     {
-      q: 'What\u2019s in the Custom tier?',
-      a: 'Custom tier is for high-volume agencies (5,000+ min/mo), HIPAA / SOC 2 compliance needs, mobile app white-label, or custom integrations. Pricing starts at $0.07/min with custom platform fees.',
+      q: 'What\'s included with the CRM?',
+      a: 'Contacts, custom fields, deal pipelines (Kanban / Table / Timeline views), AI deal drawer with summaries, calendar integrations (Google, Outlook, Cal.com), browser softphone, automatic call recording and transcription, per-call AI summaries, eval system per agent, and TCPA compliance with audit log.',
+    },
+    {
+      q: 'What\'s in the Custom tier?',
+      a: 'Custom tier is for high-volume agencies (5,000+ min/mo), HIPAA / SOC 2 compliance needs, mobile app white-label, or custom integrations. Pricing is negotiated based on volume and requirements.',
     },
   ],
 }
