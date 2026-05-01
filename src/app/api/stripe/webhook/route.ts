@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
-import { getTierByStripePriceId, type TierId, type BillingInterval } from "@/config/pricing";
+import {
+  getTierByStripePriceId,
+  isWhiteLabelAddonPriceId,
+  type TierId,
+  type BillingInterval,
+} from "@/config/pricing";
 
 /**
  * POST /api/stripe/webhook
@@ -148,11 +153,25 @@ export async function POST(req: NextRequest) {
       return { tierId: metaTier, interval: metaInterval };
     }
 
-    const priceId = sub?.items?.data?.[0]?.price?.id as string | undefined;
+    // Phase 8: when looking up tier from line items, IGNORE the WL add-on
+    // price ID (it doesn't represent a tier). Find the first non-WL line item.
+    const items = sub?.items?.data ?? [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tierItem = items.find((it: any) => !isWhiteLabelAddonPriceId(it?.price?.id));
+    const priceId = tierItem?.price?.id as string | undefined;
     if (!priceId) return null;
     const matched = getTierByStripePriceId(priceId);
     if (!matched) return null;
     return { tierId: matched.tier.id, interval: matched.interval };
+  };
+
+  // Phase 8: detect WL add-on by scanning all subscription line items.
+  // Returns true if any line item's price.id matches a WL add-on price.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const subHasWlAddon = (sub: any): boolean => {
+    const items = sub?.items?.data ?? [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return items.some((it: any) => isWhiteLabelAddonPriceId(it?.price?.id));
   };
 
   try {
@@ -180,6 +199,7 @@ export async function POST(req: NextRequest) {
 
         // Build the update object. Phase 4: also write tier + billing_interval
         // (the new pricing schema columns) when we can resolve them from the sub.
+        // Phase 8: also write is_white_label_enabled based on WL line item.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const updatePayload: Record<string, any> = {
           stripe_customer_id: session.customer as string,
@@ -191,6 +211,16 @@ export async function POST(req: NextRequest) {
         if (tierResolution) {
           updatePayload.tier = tierResolution.tierId;
           updatePayload.billing_interval = tierResolution.interval;
+        }
+        // Phase 8: WL flag derived from line items in the retrieved subscription
+        if (session.subscription) {
+          // The `sub` object was retrieved above for tierResolution; refetch is
+          // unnecessary but we need the variable in this scope. Re-retrieve once
+          // for clarity (Stripe caches; this is cheap).
+          const subForWl = await stripe.subscriptions.retrieve(session.subscription as string);
+          updatePayload.is_white_label_enabled = subHasWlAddon(subForWl);
+        } else {
+          updatePayload.is_white_label_enabled = false;
         }
 
         await supabase
@@ -251,6 +281,9 @@ export async function POST(req: NextRequest) {
           subscription_status: sub.status,
           subscription_plan_id: sub.items.data[0]?.price.id ?? null,
           subscription_current_period_end: subPeriodEnd(sub),
+          // Phase 8: WL flag tracks current line items. Removing the WL price
+          // from the subscription disables WL on next webhook.
+          is_white_label_enabled: subHasWlAddon(sub),
         };
         if (tierResolution) {
           updatePayload.tier = tierResolution.tierId;
@@ -280,11 +313,13 @@ export async function POST(req: NextRequest) {
         // billing_interval (let the next checkout re-set it). This blocks
         // outbound calls via wallet-guard's solo_trial_exhausted path once
         // they've used 30 trial minutes.
+        // Phase 8: also clear WL flag — subscription canceled means no add-on.
         await supabase
           .from("organizations")
           .update({
             subscription_status: "canceled",
             tier: "solo",
+            is_white_label_enabled: false,
           })
           .eq("id", orgId);
         break;

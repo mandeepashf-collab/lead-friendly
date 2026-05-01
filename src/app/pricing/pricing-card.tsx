@@ -1,7 +1,9 @@
 'use client'
 
+import { useState } from 'react'
 import { Check } from 'lucide-react'
 import type { PricingTier } from '@/config/pricing'
+import { WL_ADDON } from '@/config/pricing'
 import { SubscribeButton } from './subscribe-button'
 
 interface Props {
@@ -13,11 +15,18 @@ interface Props {
  * (no toggle), with two CTAs per paid card mapping directly to a
  * Stripe Price ID. Solo card has a single "Start free trial" CTA.
  *
+ * Phase 8: Agency tier card has a "+ White-label setup" checkbox that
+ * adds the WL add-on Stripe Price as a second line item at checkout.
+ *
  * Reads everything from pricing.ts — single source of truth.
  */
 export function PricingCard({ tier }: Props) {
   const isSolo = tier.id === 'solo'
   const isFeatured = tier.isFeatured
+  const isAgency = tier.id === 'agency'
+
+  // Phase 8: WL add-on toggle (agency tier only)
+  const [includeWl, setIncludeWl] = useState(false)
 
   const cardClass = isFeatured
     ? 'relative rounded-2xl border-2 border-indigo-500 bg-indigo-500/5 p-6 flex flex-col'
@@ -55,6 +64,11 @@ export function PricingCard({ tier }: Props) {
               </div>
               <div className="text-xl font-semibold text-white">
                 ${tier.monthlyPrice}
+                {isAgency && includeWl && (
+                  <span className="text-xs text-amber-400 ml-1">
+                    +${WL_ADDON.monthlyPriceUsd}
+                  </span>
+                )}
               </div>
               <div className="text-[10px] text-zinc-500">/mo</div>
             </div>
@@ -67,6 +81,11 @@ export function PricingCard({ tier }: Props) {
               </div>
               <div className="text-xl font-semibold text-white">
                 ${tier.monthlyEquivalent}
+                {isAgency && includeWl && (
+                  <span className="text-xs text-amber-400 ml-1">
+                    +${WL_ADDON.annualPriceUsdPerMonth}
+                  </span>
+                )}
               </div>
               <div className="text-[10px] text-zinc-500">/mo</div>
             </div>
@@ -82,6 +101,27 @@ export function PricingCard({ tier }: Props) {
                 at full annual bundle
               </div>
             </div>
+          )}
+
+          {/* Phase 8: White-label add-on checkbox (agency tier only) */}
+          {isAgency && (
+            <label className="mb-3 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-2.5 cursor-pointer hover:border-amber-500/50">
+              <input
+                type="checkbox"
+                checked={includeWl}
+                onChange={(e) => setIncludeWl(e.target.checked)}
+                className="mt-0.5 h-3.5 w-3.5 cursor-pointer accent-amber-500"
+              />
+              <div className="flex-1">
+                <div className="text-[11px] font-semibold text-amber-300">
+                  + White-label add-on
+                </div>
+                <div className="text-[10px] text-amber-400/70 mt-0.5">
+                  Custom domain + branded portal. ${WL_ADDON.monthlyPriceUsd}
+                  /mo monthly, ${WL_ADDON.annualPriceUsdPerMonth}/mo annual.
+                </div>
+              </div>
+            </label>
           )}
         </>
       )}
@@ -103,6 +143,7 @@ export function PricingCard({ tier }: Props) {
             interval="monthly"
             isFeatured={false}
             buttonLabel="Subscribe monthly"
+            includeWhiteLabel={isAgency && includeWl}
           />
           <SubscribeButton
             tierId={tier.id}
@@ -110,6 +151,7 @@ export function PricingCard({ tier }: Props) {
             interval="annual"
             isFeatured={true}
             buttonLabel="Subscribe annual"
+            includeWhiteLabel={isAgency && includeWl}
           />
         </div>
       )}
@@ -151,7 +193,13 @@ export function PricingCard({ tier }: Props) {
             <span>Priority support</span>
           </li>
         )}
-        {tier.whiteLabel && (
+        {isAgency && (
+          <li className="flex items-start gap-2 text-xs text-zinc-300">
+            <Check className="h-3.5 w-3.5 text-indigo-400 shrink-0 mt-0.5" />
+            <span>Sub-accounts (white-label requires add-on)</span>
+          </li>
+        )}
+        {tier.whiteLabel && !isAgency && (
           <li className="flex items-start gap-2 text-xs text-zinc-300">
             <Check className="h-3.5 w-3.5 text-indigo-400 shrink-0 mt-0.5" />
             <span>White-label + custom domain</span>

@@ -5,6 +5,11 @@
  * to this from /api/webrtc/create-call, /api/calls/sip-outbound, and
  * /api/softphone/initiate.
  *
+ * Phase 8 update: resolves to the billing org (parent agency for sub-accounts)
+ * before checking tier/wallet. So a sub-account's call eligibility is gated
+ * on the parent agency's wallet + bundle, not the sub-account's. Custom
+ * pricing on the billing org also applies here.
+ *
  * Returns a structured "allow / deny + reason" result rather than throwing.
  * Callers are expected to translate the deny reason into the right HTTP
  * response (402 Payment Required is the convention).
@@ -12,6 +17,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getTierById, type TierId } from '@/config/pricing'
+import { resolveBillingOrg } from './get-billing-org'
 
 export interface WalletGuardAllow {
   allowed: true
@@ -57,17 +63,34 @@ export async function checkOutboundCallAllowed(
   const { organizationId, supabase } = input
 
   try {
-    // Fetch org tier + period state and wallet state in parallel
+    // Phase 8: resolve to the billing org (parent agency for sub-accounts).
+    // All wallet/tier/bundle checks operate on the BILLING org, not the
+    // calling org. Sub-accounts effectively inherit eligibility from their
+    // parent agency.
+    let billingOrgId: string
+    try {
+      const resolution = await resolveBillingOrg(supabase, organizationId)
+      billingOrgId = resolution.billingOrgId
+    } catch {
+      return {
+        allowed: false,
+        reason: 'org_not_found',
+        message: 'Organization not found.',
+        httpStatus: 500,
+      }
+    }
+
+    // Fetch billing org tier + period state, custom pricing, and wallet state in parallel
     const [orgRes, walletRes] = await Promise.all([
       supabase
         .from('organizations')
-        .select('tier, current_period_minutes_used, subscription_status')
-        .eq('id', organizationId)
+        .select('tier, current_period_minutes_used, subscription_status, custom_included_minutes, custom_overage_rate_x10000')
+        .eq('id', billingOrgId)
         .maybeSingle(),
       supabase
         .from('org_wallets')
         .select('balance_cents, is_blocked, blocked_reason')
-        .eq('organization_id', organizationId)
+        .eq('organization_id', billingOrgId)
         .maybeSingle(),
     ])
 
@@ -84,6 +107,8 @@ export async function checkOutboundCallAllowed(
       tier: TierId
       current_period_minutes_used: number
       subscription_status: string | null
+      custom_included_minutes: number | null
+      custom_overage_rate_x10000: number | null
     }
     const wallet = walletRes.data as {
       balance_cents: number
@@ -111,8 +136,17 @@ export async function checkOutboundCallAllowed(
       }
     }
 
+    // Phase 8: custom pricing overrides tier defaults if set on billing org.
+    // Custom values are NULL by default (= use tier default).
+    const effectiveIncludedMinutes =
+      org.custom_included_minutes ?? tier.includedMinutes
+    const effectiveOverageRate =
+      org.custom_overage_rate_x10000 != null
+        ? org.custom_overage_rate_x10000 / 10000  // x10000 → dollars
+        : tier.overageRate
+
     const minutesUsed = org.current_period_minutes_used ?? 0
-    const bundleMinutesRemaining = Math.max(0, tier.includedMinutes - minutesUsed)
+    const bundleMinutesRemaining = Math.max(0, effectiveIncludedMinutes - minutesUsed)
 
     // Solo: hard cap at 30 trial minutes, no wallet, no overage
     if (tier.id === 'solo') {
@@ -125,7 +159,7 @@ export async function checkOutboundCallAllowed(
           httpStatus: 402,
         }
       }
-      if (minutesUsed >= tier.includedMinutes) {
+      if (minutesUsed >= effectiveIncludedMinutes) {
         return {
           allowed: false,
           reason: 'solo_trial_exhausted',
@@ -145,7 +179,7 @@ export async function checkOutboundCallAllowed(
     if (tier.id === 'custom') {
       return {
         allowed: true,
-        bundleMinutesRemaining: tier.includedMinutes - minutesUsed,
+        bundleMinutesRemaining: effectiveIncludedMinutes - minutesUsed,
         walletBalanceCents: wallet?.balance_cents ?? 0,
       }
     }
@@ -196,8 +230,8 @@ export async function checkOutboundCallAllowed(
     }
 
     // Bundle exhausted → wallet must have at least enough for ~1 min of overage.
-    // Use highest overage rate ($0.16) as a conservative gate to avoid mid-call failure.
-    const minRequiredCents = Math.ceil(tier.overageRate * 100)  // 1 min worth, in cents
+    // Phase 8: use the effective overage rate (custom or tier default).
+    const minRequiredCents = Math.ceil(effectiveOverageRate * 100)  // 1 min worth, in cents
     if (wallet.balance_cents < minRequiredCents) {
       return {
         allowed: false,

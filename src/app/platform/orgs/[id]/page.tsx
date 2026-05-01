@@ -7,6 +7,7 @@ import {
   Phone,
   Megaphone,
   GitBranch,
+  DollarSign,
 } from 'lucide-react'
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -111,12 +112,21 @@ export default async function PlatformOrgDetailPage({
 
   return (
     <div className="space-y-6">
-      <Link
-        href="/platform/orgs"
-        className="inline-flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-100"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" /> Back to orgs
-      </Link>
+      <div className="flex items-center justify-between">
+        <Link
+          href="/platform/orgs"
+          className="inline-flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-100"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" /> Back to orgs
+        </Link>
+        <Link
+          href={`/platform/orgs/${id}/pricing`}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-1.5 text-xs font-medium text-indigo-300 hover:bg-indigo-500/20"
+        >
+          <DollarSign className="h-3.5 w-3.5" />
+          Custom pricing
+        </Link>
+      </div>
 
       <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-6 space-y-3">
         <div className="flex items-center gap-3">

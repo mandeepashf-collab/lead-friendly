@@ -181,6 +181,38 @@ export const TIER_CUSTOM: PricingTier = {
 }
 
 // =============================================================
+// PHASE 8: WHITE-LABEL ADD-ON
+// =============================================================
+//
+// Optional add-on for Agency tier customers who want a custom domain
+// + branded portal. Without this add-on, Agency tier customers can still
+// create sub-accounts but they'll be on lead-friendly.com (no white-label).
+//
+// Pricing: $99/mo monthly OR $79/mo annual ($948/yr — 20% discount).
+// Webhook sets organizations.is_white_label_enabled = true when this
+// Stripe Price appears in the subscription line items.
+
+export const WL_ADDON = {
+  monthlyPriceUsd: 99,
+  annualPriceUsdPerMonth: 79,
+  annualPriceUsd: 948,  // 79 * 12
+  stripePriceIdMonthly: process.env.STRIPE_PRICE_WL_ADDON_MONTHLY,
+  stripePriceIdAnnual: process.env.STRIPE_PRICE_WL_ADDON_ANNUAL,
+} as const
+
+/**
+ * Phase 8: Returns true if a Stripe Price ID corresponds to the WL add-on.
+ * Used by webhook to detect WL add-on in subscription line items.
+ */
+export function isWhiteLabelAddonPriceId(priceId: string | null | undefined): boolean {
+  if (!priceId) return false
+  return (
+    priceId === WL_ADDON.stripePriceIdMonthly ||
+    priceId === WL_ADDON.stripePriceIdAnnual
+  )
+}
+
+// =============================================================
 // CUSTOM TIER NEGOTIATION FLOOR (internal use only)
 // =============================================================
 

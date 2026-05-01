@@ -7,18 +7,29 @@ import { getTierById } from '@/config/pricing'
  * GET /api/ai-minutes
  *
  * Returns the current org's billing snapshot for dashboard/header widgets.
- * Source of truth: organizations.current_period_minutes_used (counter
- * incremented atomically by record_call_usage on every call-end webhook),
- * and src/config/pricing.ts for the bundle limit per tier.
+ *
+ * Phase 8 update: Resolves to the billing org (parent agency for sub-accounts)
+ * before reading the snapshot. So a sub-account user sees the agency's bundle
+ * + wallet, not their own (always-zero) counter. Custom pricing on the billing
+ * org overrides tier defaults.
+ *
+ * Source of truth: organizations.current_period_minutes_used on the billing org
+ * (counter incremented atomically by record_call_usage on every call-end
+ * webhook, which routes to billing org), and src/config/pricing.ts for the
+ * bundle limit per tier.
  *
  * Response:
  *   {
- *     used: number,                    // minutes used in current period
- *     limit: number,                   // bundle limit for the tier
+ *     used: number,                    // minutes used in current period (billing org)
+ *     limit: number,                   // bundle limit (custom override OR tier default)
  *     overageMinutes: number,          // how many minutes over bundle (0 if within)
+ *     overageRatePerMinute: number,    // dollars per minute for overage
  *     tier: string,                    // 'starter' | 'pro' | ...
  *     billingInterval: string | null,  // 'monthly' | 'annual' | null (free/trial)
  *     periodEndsAt: string | null,     // ISO date when bundle resets
+ *     isSubAccount: boolean,           // Phase 8: true if viewing org is a sub-account
+ *     billingOrgName: string | null,   // parent agency's name when sub-account
+ *     customPricingApplied: boolean,   // Phase 8: true if custom override is active
  *     wallet: {
  *       balanceCents: number,
  *       isBlocked: boolean,
@@ -53,21 +64,40 @@ export async function GET() {
       return NextResponse.json({ error: 'No organization' }, { status: 404 })
     }
 
-    const [orgRes, walletRes] = await Promise.all([
+    // Phase 8: resolve to billing org. Sub-accounts inherit the agency's snapshot.
+    const { data: ownOrg } = await supabase
+      .from('organizations')
+      .select('parent_organization_id')
+      .eq('id', profile.organization_id)
+      .maybeSingle()
+
+    const billingOrgId =
+      (ownOrg?.parent_organization_id as string | null) ?? profile.organization_id
+    const isSubAccount = billingOrgId !== profile.organization_id
+
+    const [orgRes, walletRes, parentOrgRes] = await Promise.all([
       supabase
         .from('organizations')
         .select(
-          'tier, billing_interval, current_period_minutes_used, current_period_ends_at',
+          'tier, billing_interval, current_period_minutes_used, current_period_ends_at, custom_included_minutes, custom_overage_rate_x10000',
         )
-        .eq('id', profile.organization_id)
+        .eq('id', billingOrgId)
         .maybeSingle(),
       supabase
         .from('org_wallets')
         .select(
           'balance_cents, is_blocked, blocked_reason, auto_reload_enabled, auto_reload_threshold_cents, auto_reload_amount_cents',
         )
-        .eq('organization_id', profile.organization_id)
+        .eq('organization_id', billingOrgId)
         .maybeSingle(),
+      // Only fetch parent name when we're a sub-account, for UI messaging
+      isSubAccount
+        ? supabase
+            .from('organizations')
+            .select('name')
+            .eq('id', billingOrgId)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
     ])
 
     if (orgRes.error || !orgRes.data) {
@@ -75,8 +105,18 @@ export async function GET() {
     }
 
     const org = orgRes.data
-    const tier = getTierById(org.tier as 'solo' | 'starter' | 'pro' | 'agency' | 'custom' | 'founding')
-    const limit = tier?.includedMinutes ?? 0
+    const tier = getTierById(
+      org.tier as 'solo' | 'starter' | 'pro' | 'agency' | 'custom' | 'founding',
+    )
+
+    // Phase 8: apply custom pricing overrides if set
+    const customIncluded = org.custom_included_minutes as number | null
+    const customRateX10000 = org.custom_overage_rate_x10000 as number | null
+    const limit = customIncluded ?? tier?.includedMinutes ?? 0
+    const overageRatePerMinute =
+      customRateX10000 != null ? customRateX10000 / 10000 : tier?.overageRate ?? 0
+    const customPricingApplied = customIncluded != null || customRateX10000 != null
+
     const used = org.current_period_minutes_used ?? 0
     const overageMinutes = Math.max(0, used - limit)
 
@@ -95,9 +135,16 @@ export async function GET() {
       used,
       limit,
       overageMinutes,
+      overageRatePerMinute,
       tier: org.tier,
       billingInterval: org.billing_interval,
       periodEndsAt: org.current_period_ends_at,
+      isSubAccount,
+      billingOrgName:
+        (parentOrgRes && 'data' in parentOrgRes && parentOrgRes.data
+          ? (parentOrgRes.data as { name: string | null }).name
+          : null) ?? null,
+      customPricingApplied,
       wallet,
     })
   } catch (err) {

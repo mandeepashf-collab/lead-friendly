@@ -12,6 +12,8 @@ interface Props {
   interval: BillingInterval
   isFeatured: boolean
   buttonLabel?: string
+  /** Phase 8: Agency tier checkbox to add WL add-on as a second line item. */
+  includeWhiteLabel?: boolean
 }
 
 /**
@@ -33,6 +35,7 @@ export function SubscribeButton({
   interval,
   isFeatured,
   buttonLabel,
+  includeWhiteLabel = false,
 }: Props) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
@@ -71,7 +74,7 @@ export function SubscribeButton({
         res = await fetch('/api/stripe/checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ priceId, tierId, interval }),
+          body: JSON.stringify({ priceId, tierId, interval, includeWhiteLabel }),
           // Don't auto-follow proxy redirects — we want to detect signed-out
           // state (which the proxy answers with a 307 to /login) and fall
           // back to the register route instead of getting an HTML page back.

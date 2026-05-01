@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@/lib/supabase/server";
-import { getTierByStripePriceId, type TierId, type BillingInterval } from "@/config/pricing";
+import {
+  getTierByStripePriceId,
+  WL_ADDON,
+  type TierId,
+  type BillingInterval,
+} from "@/config/pricing";
 
 /**
  * POST /api/stripe/checkout
@@ -11,9 +16,15 @@ import { getTierByStripePriceId, type TierId, type BillingInterval } from "@/con
  * sends a webhook to /api/stripe/webhook which:
  *   - Sets organizations.tier (from metadata)
  *   - Sets organizations.billing_interval (from metadata)
+ *   - Sets organizations.is_white_label_enabled if WL line item present (Phase 8)
  *   - Seeds current_period_starts_at / ends_at via Phase 1.7 maybeRollPeriod
  *
- * Body: { priceId: string; tierId: TierId; interval: BillingInterval }
+ * Body: { 
+ *   priceId: string;
+ *   tierId: TierId;
+ *   interval: BillingInterval;
+ *   includeWhiteLabel?: boolean;  // Phase 8: Agency tier only — adds WL add-on line item
+ * }
  *
  * Validates priceId against pricing.ts so unknown / spoofed price IDs
  * are rejected (defense-in-depth — Stripe Checkout would also reject,
@@ -27,13 +38,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let body: { priceId?: string; tierId?: TierId; interval?: BillingInterval } = {};
+  let body: {
+    priceId?: string;
+    tierId?: TierId;
+    interval?: BillingInterval;
+    includeWhiteLabel?: boolean;
+  } = {};
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const { priceId, tierId, interval } = body;
+  const { priceId, tierId, interval, includeWhiteLabel } = body;
   if (!priceId) {
     return NextResponse.json({ error: "priceId required" }, { status: 400 });
   }
@@ -125,11 +141,44 @@ export async function POST(req: NextRequest) {
     billing_interval: canonicalInterval,
   };
 
+  // Phase 8: build line items array. Agency tier customers can opt into the
+  // WL add-on at checkout — adds a second recurring line item for the WL
+  // monthly/annual price (matching the agency's billing interval).
+  const lineItems: Array<{ price: string; quantity: number }> = [
+    { price: priceId, quantity: 1 },
+  ];
+
+  let wlAddonAttached = false;
+  if (includeWhiteLabel && canonicalTierId === "agency") {
+    const wlPriceId =
+      canonicalInterval === "annual"
+        ? WL_ADDON.stripePriceIdAnnual
+        : WL_ADDON.stripePriceIdMonthly;
+    if (!wlPriceId) {
+      return NextResponse.json(
+        {
+          error:
+            "White-label add-on requested but STRIPE_PRICE_WL_ADDON_* env vars are not configured. Add them in Vercel before re-trying.",
+        },
+        { status: 500 }
+      );
+    }
+    lineItems.push({ price: wlPriceId, quantity: 1 });
+    wlAddonAttached = true;
+  } else if (includeWhiteLabel && canonicalTierId !== "agency") {
+    // Soft-fail: non-agency tier asked for WL add-on. Reject — WL is
+    // agency-tier only. Better to refuse than silently drop it.
+    return NextResponse.json(
+      { error: "White-label add-on is only available on the Agency tier." },
+      { status: 400 }
+    );
+  }
+
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer: customerId,
     client_reference_id: org.id,
-    line_items: [{ price: priceId, quantity: 1 }],
+    line_items: lineItems,
     allow_promotion_codes: true,
     payment_method_collection: "always",
     // Auto-tax: TEMPORARILY DISABLED for first smoke test. Stripe Tax
@@ -137,13 +186,13 @@ export async function POST(req: NextRequest) {
     // least one tax-registration jurisdiction. Enable both, then flip
     // this back to true and add `customer_update: { address: "auto", name: "auto" }`.
     automatic_tax: { enabled: false },
-    success_url: `${origin}/dashboard?subscription=success&tier=${canonicalTierId}&interval=${canonicalInterval}`,
+    success_url: `${origin}/dashboard?subscription=success&tier=${canonicalTierId}&interval=${canonicalInterval}${wlAddonAttached ? "&wl=1" : ""}`,
     cancel_url: `${origin}/pricing?subscription=cancel`,
     subscription_data: {
-      metadata: sharedMetadata,
+      metadata: { ...sharedMetadata, wl_addon: wlAddonAttached ? "1" : "0" },
     },
-    metadata: sharedMetadata,
+    metadata: { ...sharedMetadata, wl_addon: wlAddonAttached ? "1" : "0" },
   });
 
-  return NextResponse.json({ url: session.url, sessionId: session.id });
+  return NextResponse.json({ url: session.url, sessionId: session.id, wlAddonAttached });
 }
