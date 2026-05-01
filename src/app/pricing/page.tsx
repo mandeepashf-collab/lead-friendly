@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { Sparkles } from 'lucide-react'
 import { JsonLd } from '@/components/seo/json-ld'
 import { ensureMasterBrandOr404 } from '@/lib/seo/ensure-master'
+import { createClient } from '@/lib/supabase/server'
 import {
   TIER_SOLO,
   TIER_STARTER,
@@ -61,6 +62,16 @@ function FaqSchema() {
 export default async function PricingPage() {
   await ensureMasterBrandOr404()
 
+  // Phase 5 polish: detect signed-in state so the header shows "Dashboard"
+  // for authenticated users instead of "Sign in / Get started free". This
+  // page lives in PUBLIC_EXACT for SEO so the proxy doesn't run auth, but
+  // we can still call supabase.auth.getUser() inline as a server component.
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  const isSignedIn = !!user
+
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
       <FaqSchema />
@@ -74,15 +85,26 @@ export default async function PricingPage() {
           <span className="text-lg font-bold">Lead Friendly</span>
         </Link>
         <div className="flex items-center gap-4">
-          <Link href="/login" className="text-sm text-zinc-400 hover:text-white">
-            Sign in
-          </Link>
-          <Link
-            href="/register"
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-          >
-            Get started free
-          </Link>
+          {isSignedIn ? (
+            <Link
+              href="/dashboard"
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+            >
+              Go to dashboard
+            </Link>
+          ) : (
+            <>
+              <Link href="/login" className="text-sm text-zinc-400 hover:text-white">
+                Sign in
+              </Link>
+              <Link
+                href="/register"
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+              >
+                Get started free
+              </Link>
+            </>
+          )}
         </div>
       </header>
 

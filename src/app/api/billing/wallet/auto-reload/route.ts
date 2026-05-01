@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { createClient as createUserClient } from '@/lib/supabase/server'
 
 /**
  * POST /api/billing/wallet/auto-reload
  *
- * Phase 4.5: Charges the customer's default payment method on file via
+ * Phase 4.5 + 5: Charges the customer's default payment method on file via
  * Stripe Payment Intent and credits their wallet on success.
  *
  * Trigger sources:
@@ -14,11 +15,17 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
  *   - 'manual_topup': from /settings/billing Top Up button (Phase 5)
  *   - 'cron_sweep': daily safety net for orgs that fell through cracks
  *
- * Auth: requires x-internal-secret (or x-cron-secret) header matching
- * CRON_SECRET. The route is public-prefixed so the proxy doesn't redirect
- * it to /login.
+ * Auth (TWO supported paths):
+ *   A) Internal: x-internal-secret (or x-cron-secret) header matching
+ *      CRON_SECRET. Caller must pass organizationId in body. Used by
+ *      usage.ts fire-and-forget trigger and future cron jobs.
+ *   B) Session: logged-in user (Supabase session via cookies). Org is
+ *      derived from the user's profile.organization_id; the body's
+ *      organizationId is ignored if present (defense against confused-
+ *      deputy attacks where a session user tries to top up someone
+ *      else's wallet). Used by /settings/billing Top Up button.
  *
- * Body: { organizationId: string; triggerSource?: 'auto_reload' | 'manual_topup' | 'cron_sweep' }
+ * Body: { organizationId?: string; triggerSource?: 'auto_reload' | 'manual_topup' | 'cron_sweep' }
  *
  * Response shapes:
  *   200 { skipped: true, reason: '...' }
@@ -55,8 +62,7 @@ interface OrgRow {
 }
 
 export async function POST(req: NextRequest) {
-  // Auth check — internal secret only. The proxy makes this route public,
-  // so this header check is the only gate.
+  // ── Dual auth: internal secret OR logged-in session ────────
   const cronSecret = process.env.CRON_SECRET
   if (!cronSecret) {
     return NextResponse.json(
@@ -64,10 +70,9 @@ export async function POST(req: NextRequest) {
       { status: 500 },
     )
   }
+
   const provided = req.headers.get('x-internal-secret') || req.headers.get('x-cron-secret')
-  if (provided !== cronSecret) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const isInternal = provided === cronSecret
 
   if (!process.env.STRIPE_SECRET_KEY) {
     return NextResponse.json(
@@ -80,14 +85,52 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json()
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    // Empty body is fine for session-auth manual_topup; we'll resolve org from session
   }
 
-  const organizationId = body.organizationId
   const triggerSource: TriggerSource = body.triggerSource ?? 'auto_reload'
 
-  if (!organizationId) {
-    return NextResponse.json({ error: 'organizationId required' }, { status: 400 })
+  // Resolve organizationId based on auth path:
+  // - Internal: trust body.organizationId
+  // - Session: derive from user's profile, IGNORING any body.organizationId
+  //   (defense against confused-deputy: a logged-in user shouldn't be able
+  //   to top up an arbitrary org by passing its UUID in the body)
+  let organizationId: string | undefined
+
+  if (isInternal) {
+    organizationId = body.organizationId
+    if (!organizationId) {
+      return NextResponse.json(
+        { error: 'organizationId required when calling with internal secret' },
+        { status: 400 },
+      )
+    }
+  } else {
+    // Session path
+    const supabaseUser = await createUserClient()
+    const {
+      data: { user },
+      error: userErr,
+    } = await supabaseUser.auth.getUser()
+
+    if (userErr || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('organization_id')
+      .eq('id', user.id)
+      .single()
+
+    if (!profile?.organization_id) {
+      return NextResponse.json(
+        { error: 'No organization linked to this user' },
+        { status: 403 },
+      )
+    }
+
+    organizationId = profile.organization_id
   }
 
   // ── Read wallet + org state ────────────────────────────────
@@ -248,7 +291,7 @@ export async function POST(req: NextRequest) {
         statement_descriptor_suffix: 'WALLET',
         metadata: {
           purpose: 'wallet_reload',
-          organization_id: organizationId,
+          organization_id: organizationId!,
           attempt_id: attemptId,
           trigger_source: triggerSource,
         },

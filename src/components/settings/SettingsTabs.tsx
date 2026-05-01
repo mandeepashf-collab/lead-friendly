@@ -10,6 +10,7 @@ import {
   Shield,
   ShieldCheck,
   Palette,
+  CreditCard,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -46,6 +47,7 @@ const PANEL_TABS: PanelTab[] = [
 ]
 
 const ROUTE_TABS: { href: string; label: string; icon: LucideIcon }[] = [
+  { href: '/settings/billing', label: 'Billing', icon: CreditCard },
   { href: '/settings/compliance', label: 'Compliance', icon: ShieldCheck },
   { href: '/settings/branding', label: 'Branding', icon: Palette },
 ]
