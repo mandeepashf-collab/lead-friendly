@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { checkOutboundCallAllowed } from "@/lib/billing/wallet-guard";
 
 /**
  * POST /api/agents/test-call
@@ -54,6 +55,21 @@ export async function POST(request: NextRequest) {
     .single();
   if (!profile?.organization_id) {
     return NextResponse.json({ error: "Organization not found" }, { status: 400 });
+  }
+
+  // ── Wallet guard: block if trial exhausted, wallet blocked, or sub canceled ──
+  // Phase 1.6 — test calls fire real Telnyx PSTN egress, so they count.
+  // Uses the session-bound supabase client; RLS on org_wallets allows the
+  // user to read their own org's wallet row.
+  const guard = await checkOutboundCallAllowed({
+    organizationId: profile.organization_id,
+    supabase,
+  });
+  if (!guard.allowed) {
+    return NextResponse.json(
+      { error: guard.message, reason: guard.reason },
+      { status: guard.httpStatus },
+    );
   }
 
   // Pick the first active phone number from the org's pool

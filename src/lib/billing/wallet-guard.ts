@@ -42,7 +42,13 @@ export type WalletGuardResult = WalletGuardAllow | WalletGuardDeny
 
 export interface WalletGuardInput {
   organizationId: string
-  supabase: SupabaseClient  // service-role client
+  /**
+   * Service-role OR session-bound Supabase client. Read-only operations on
+   * organizations + org_wallets are RLS-permitted for org members, so a
+   * session client works as long as the user belongs to organizationId.
+   * Service-role bypasses RLS for server-to-server contexts (campaign launch).
+   */
+  supabase: SupabaseClient
 }
 
 export async function checkOutboundCallAllowed(
@@ -110,6 +116,15 @@ export async function checkOutboundCallAllowed(
 
     // Solo: hard cap at 30 trial minutes, no wallet, no overage
     if (tier.id === 'solo') {
+      // Even on Solo, respect a manual block (e.g., admin paused the org)
+      if (wallet?.is_blocked) {
+        return {
+          allowed: false,
+          reason: 'wallet_blocked_manual',
+          message: 'Calls are paused on this account. Contact support to resume.',
+          httpStatus: 402,
+        }
+      }
       if (minutesUsed >= tier.includedMinutes) {
         return {
           allowed: false,

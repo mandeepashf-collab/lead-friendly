@@ -9,6 +9,7 @@ import { createSipParticipant } from "@/lib/livekit/sip";
 import { substituteVariables, type PromptVarContext } from "@/lib/prompt-vars";
 import { enforceTcpa } from "@/lib/tcpa/enforce";
 import { writeOverrideAudit } from "@/lib/tcpa/audit";
+import { checkOutboundCallAllowed } from "@/lib/billing/wallet-guard";
 
 /**
  * POST /api/calls/sip-outbound
@@ -139,6 +140,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "contactId or contactPhone is required" },
         { status: 400 },
+      );
+    }
+
+    // ── Wallet guard: block if trial exhausted, wallet blocked, or sub canceled ──
+    // Phase 1.6 — runs before agent/contact load + TCPA gate. Applies equally
+    // to user-session and campaign-launch paths since both ultimately consume
+    // the same org's wallet for overage.
+    const guard = await checkOutboundCallAllowed({
+      organizationId: orgId,
+      supabase: supabaseAdmin,
+    });
+    if (!guard.allowed) {
+      return NextResponse.json(
+        { error: guard.message, reason: guard.reason },
+        { status: guard.httpStatus },
       );
     }
 
