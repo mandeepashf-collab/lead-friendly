@@ -15,6 +15,7 @@ import { PricingCard } from './pricing-card'
 import { CustomTierBand } from './custom-tier-band'
 import { AddOnsBand } from './add-ons-band'
 import { BundledBanner } from './bundled-banner'
+import { AutoCheckoutOnPricing } from './auto-checkout'
 
 const SITE_URL = 'https://www.leadfriendly.com'
 
@@ -103,6 +104,9 @@ export default async function PricingPage() {
 
       {/* Pricing cards */}
       <div className="max-w-7xl mx-auto px-6 pb-20">
+        {/* Phase 4: auto-fire checkout if URL has post-OAuth intent params */}
+        <AutoCheckoutOnPricing />
+
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4 mb-3">
           <PricingCard tier={TIER_SOLO} />
           <PricingCard tier={TIER_STARTER} />

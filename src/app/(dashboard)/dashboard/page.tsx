@@ -24,6 +24,7 @@ import { AgentCardsSection } from "@/components/dashboard/agent-cards-section";
 import { GoalWidget } from "@/components/dashboard/goal-widget";
 import { ActivityPulseFeed } from "@/components/dashboard/activity-pulse-feed";
 import { DailyDigestCard } from "@/components/dashboard/daily-digest-card";
+import { SubscriptionSuccessBanner } from "@/components/dashboard/subscription-success-banner";
 
 interface Stat {
   name: string;
@@ -251,6 +252,9 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
+      {/* Subscription success banner — shown after Stripe Checkout */}
+      <SubscriptionSuccessBanner />
+
       {/* Launchpad Banner */}
       {!bannerDismissed && setupComplete < totalSteps && (
         <div className="flex items-center gap-4 rounded-xl border border-zinc-800 bg-zinc-900 p-4">

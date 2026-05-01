@@ -5,6 +5,44 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Sparkles, Loader2 } from "lucide-react";
 
+/**
+ * Resolve where to send the user after signup. If URL has checkout intent
+ * params, kick off Stripe Checkout. Otherwise /dashboard.
+ *
+ * Note: signup creates the user but the org row may not exist yet (depends
+ * on your trigger setup). If checkout fails because there's no org, fall
+ * back to /pricing where they can re-click after the org is provisioned.
+ */
+async function postSignupRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  const priceId = params.get("priceId");
+  const tierId = params.get("plan");
+  const interval = params.get("interval");
+
+  if (priceId && tierId && interval) {
+    try {
+      const res = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priceId, tierId, interval }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
+    } catch {
+      /* fall through */
+    }
+    // If checkout failed, send them back to /pricing so they can retry
+    window.location.assign(`/pricing?retry=1`);
+    return;
+  }
+
+  // Default
+  window.location.assign("/dashboard");
+}
+
 export default function RegisterPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -30,18 +68,26 @@ export default function RegisterPage() {
       setLoading(false);
     } else {
       setSuccess(true);
-      // Full-page nav (not router.push) so freshly-set Supabase auth
-      // cookies reach the proxy. See login/page.tsx for full rationale.
-      setTimeout(() => window.location.assign("/dashboard"), 1500);
+      // Phase 4: if user came from /pricing with checkout intent, jump
+      // straight to Stripe Checkout instead of dashboard.
+      setTimeout(() => { postSignupRedirect(); }, 1500);
     }
   };
 
   const handleGoogle = async () => {
     setGoogleLoading(true);
     const supabase = createClient();
+    // Phase 4: preserve checkout intent through OAuth round-trip.
+    const params = new URLSearchParams(window.location.search);
+    const hasCheckoutIntent = params.has("priceId");
+    const next = hasCheckoutIntent
+      ? `/pricing?${params.toString()}`
+      : "/dashboard";
     await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+      },
     });
   };
 

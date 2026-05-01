@@ -132,6 +132,12 @@ export async function POST(req: NextRequest) {
     line_items: [{ price: priceId, quantity: 1 }],
     allow_promotion_codes: true,
     payment_method_collection: "always",
+    // Auto-tax: requires Stripe Tax to be enabled in Stripe Dashboard
+    // (Settings → Tax → Activate). If not enabled, this is a no-op so safe
+    // to leave on. customer_update.address required for Stripe to determine
+    // the customer's tax jurisdiction from billing address.
+    automatic_tax: { enabled: true },
+    customer_update: { address: "auto", name: "auto" },
     success_url: `${origin}/dashboard?subscription=success&tier=${canonicalTierId}&interval=${canonicalInterval}`,
     cancel_url: `${origin}/pricing?subscription=cancel`,
     subscription_data: {
