@@ -62,16 +62,51 @@ export function SubscribeButton({
         return
       }
 
-      // Signed in — go straight to Stripe Checkout
-      const res = await fetch('/api/stripe/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ priceId, tierId, interval }),
-      })
-      const data = await res.json()
+      // Signed in — go straight to Stripe Checkout. If the proxy says
+      // otherwise (e.g. session expired between getUser() and POST), fall
+      // back to register with priceId preserved so the user lands somewhere
+      // useful instead of seeing a JSON parse error.
+      let res: Response
+      try {
+        res = await fetch('/api/stripe/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ priceId, tierId, interval }),
+          // Don't auto-follow proxy redirects — we want to detect signed-out
+          // state (which the proxy answers with a 307 to /login) and fall
+          // back to the register route instead of getting an HTML page back.
+          redirect: 'manual',
+        })
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Network error')
+        setLoading(false)
+        return
+      }
+
+      // 401/redirect → server says we're not actually signed in.
+      // res.type === 'opaqueredirect' is what fetch returns when redirect:
+      // 'manual' encounters a 3xx.
+      if (res.type === 'opaqueredirect' || res.status === 401 || res.status === 0) {
+        router.push(
+          `/register?plan=${tierId}&interval=${interval}&priceId=${encodeURIComponent(priceId)}`,
+        )
+        return
+      }
+
+      // Try to parse JSON. If the response was non-JSON for any reason,
+      // fall back to register so the user has a path forward.
+      let data: { url?: string; sessionId?: string; error?: string } = {}
+      try {
+        data = await res.json()
+      } catch {
+        router.push(
+          `/register?plan=${tierId}&interval=${interval}&priceId=${encodeURIComponent(priceId)}`,
+        )
+        return
+      }
 
       if (!res.ok) {
-        setError(data.error || 'Failed to start checkout')
+        setError(data.error || `Checkout failed (HTTP ${res.status})`)
         setLoading(false)
         return
       }
