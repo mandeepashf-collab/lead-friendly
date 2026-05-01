@@ -93,6 +93,44 @@ export async function POST(req: NextRequest) {
     return new Date(Math.min(...ends) * 1000).toISOString();
   };
 
+  // Mirror of subPeriodEnd for current_period_start. Used to seed
+  // current_period_starts_at in the new pricing/wallet schema (Phase 1.7).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const subPeriodStart = (sub: any): string | null => {
+    const items = sub?.items?.data || [];
+    if (items.length === 0) return null;
+    const starts: number[] = items
+      .map((it: { current_period_start?: number }) => it.current_period_start)
+      .filter((v: unknown): v is number => typeof v === "number");
+    if (starts.length === 0) return null;
+    return new Date(Math.min(...starts) * 1000).toISOString();
+  };
+
+  // Helper: call the reset_minute_period RPC. Idempotent on the DB side,
+  // so safe to call from any subscription event that includes a period.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const maybeRollPeriod = async (
+    orgId: string,
+    sub: any,
+    source: 'stripe_webhook' | 'initial_subscription',
+  ): Promise<void> => {
+    const periodStart = subPeriodStart(sub);
+    const periodEnd = subPeriodEnd(sub);
+    if (!periodStart || !periodEnd) return;
+
+    const { error } = await supabase.rpc('reset_minute_period', {
+      p_org_id: orgId,
+      p_new_period_starts_at: periodStart,
+      p_new_period_ends_at: periodEnd,
+      p_source: source,
+      p_stripe_subscription_id: sub.id ?? null,
+    });
+    if (error) {
+      console.error(`[stripe webhook] reset_minute_period failed for org=${orgId}:`, error.message);
+      // Don't throw -- legacy column update still happened, billing audit is non-blocking.
+    }
+  };
+
   try {
     switch (event.type) {
       case "checkout.session.completed": {
@@ -124,6 +162,13 @@ export async function POST(req: NextRequest) {
             subscription_current_period_end: periodEnd,
           })
           .eq("id", orgId);
+
+        // Phase 1.7: seed period_starts_at/ends_at and zero minute counter
+        // for the very first billing cycle.
+        if (session.subscription) {
+          const sub = await stripe.subscriptions.retrieve(session.subscription as string);
+          await maybeRollPeriod(orgId, sub, 'initial_subscription');
+        }
         break;
       }
 
@@ -143,6 +188,14 @@ export async function POST(req: NextRequest) {
             subscription_current_period_end: subPeriodEnd(sub),
           })
           .eq("id", orgId);
+
+        // Phase 1.7: roll the minute period if Stripe just rotated the
+        // subscription onto a new billing cycle. RPC is idempotent against
+        // duplicate events so it's safe to call on every update.
+        const source = event.type === "customer.subscription.created"
+          ? "initial_subscription"
+          : "stripe_webhook";
+        await maybeRollPeriod(orgId, sub, source as 'stripe_webhook' | 'initial_subscription');
         break;
       }
 
