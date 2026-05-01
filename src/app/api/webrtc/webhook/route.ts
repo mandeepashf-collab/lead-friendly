@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getWebhookReceiver } from "@/lib/livekit/server";
 import { submitToDeepgram } from "@/lib/deepgram/submit";
 import { applyContactedOnFirstCall } from "@/lib/contacts/auto-status";
+import { recordCallUsage } from "@/lib/billing/usage";
 
 /**
  * POST /api/webrtc/webhook
@@ -269,6 +270,24 @@ export async function POST(req: NextRequest) {
               duration_seconds: duration,
             })
             .eq("id", callRecordId);
+
+          // Bill the call: increment minute counter, debit wallet for any
+          // overage. Idempotent against retries via last_billed_seconds.
+          // Never throws — failures are logged but don't break the flow.
+          const billing = await recordCallUsage({
+            callId: callRecordId,
+            totalDurationSeconds: duration,
+            supabase: supabaseAdmin,
+          });
+          if (billing.billed) {
+            console.log(
+              `[webrtc/webhook] room_finished billed call=${callRecordId} +${billing.minutesAdded}min total=${billing.newTotalMinutes} overage=${billing.incrementalOverageMinutes}min debit=${billing.walletDebitedCents}\u00a2`,
+            );
+          } else if (!billing.ok) {
+            console.error(
+              `[webrtc/webhook] room_finished billing FAILED call=${callRecordId} reason=${billing.reason} err=${billing.errorMessage ?? ""}`,
+            );
+          }
 
           // Auto-status: upgrade contact 'new' → 'contacted'. Best-effort.
           // Phase 3b: 'webhook' kind so the timeline event is attributed

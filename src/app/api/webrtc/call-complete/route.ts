@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { applyContactedOnFirstCall } from "@/lib/contacts/auto-status";
+import { recordCallUsage } from "@/lib/billing/usage";
 
 /**
  * POST /api/webrtc/call-complete
@@ -160,6 +161,26 @@ Return ONLY valid JSON, no markdown or extra text.`,
             `[webrtc/call-complete] ✓ call=${callRecordId} summary saved, sentiment=${sentiment}`,
           );
 
+          // Bill the call. duration is in seconds from the agent worker's
+          // body; we floor to int. Idempotent via last_billed_seconds.
+          const billingDuration = Math.max(0, Math.floor(duration ?? 0));
+          if (billingDuration > 0) {
+            const billing = await recordCallUsage({
+              callId: callRecordId,
+              totalDurationSeconds: billingDuration,
+              supabase: supabaseAdmin,
+            });
+            if (billing.billed) {
+              console.log(
+                `[webrtc/call-complete] billed call=${callRecordId} +${billing.minutesAdded}min total=${billing.newTotalMinutes} overage=${billing.incrementalOverageMinutes}min debit=${billing.walletDebitedCents}\u00a2`,
+              );
+            } else if (!billing.ok) {
+              console.error(
+                `[webrtc/call-complete] billing FAILED call=${callRecordId} reason=${billing.reason} err=${billing.errorMessage ?? ""}`,
+              );
+            }
+          }
+
           // Auto-status: upgrade contact 'new' → 'contacted'. Best-effort.
           // Phase 3b: 'system' kind — internal completion call, not an
           // external webhook.
@@ -205,6 +226,25 @@ Return ONLY valid JSON, no markdown or extra text.`,
     console.log(
       `[webrtc/call-complete] ✓ call=${callRecordId} saved (fallback path)`,
     );
+
+    // Bill the call (fallback path). Same logic as success path.
+    const fallbackBillingDuration = Math.max(0, Math.floor(duration ?? 0));
+    if (fallbackBillingDuration > 0) {
+      const billing = await recordCallUsage({
+        callId: callRecordId,
+        totalDurationSeconds: fallbackBillingDuration,
+        supabase: supabaseAdmin,
+      });
+      if (billing.billed) {
+        console.log(
+          `[webrtc/call-complete fallback] billed call=${callRecordId} +${billing.minutesAdded}min total=${billing.newTotalMinutes} overage=${billing.incrementalOverageMinutes}min debit=${billing.walletDebitedCents}\u00a2`,
+        );
+      } else if (!billing.ok) {
+        console.error(
+          `[webrtc/call-complete fallback] billing FAILED call=${callRecordId} reason=${billing.reason} err=${billing.errorMessage ?? ""}`,
+        );
+      }
+    }
 
     // Auto-status: upgrade contact 'new' → 'contacted'. Best-effort.
     // Phase 3b: 'system' kind — internal completion call.
