@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
+import { getTierByStripePriceId, type TierId, type BillingInterval } from "@/config/pricing";
 
 /**
  * POST /api/stripe/webhook
@@ -131,6 +132,27 @@ export async function POST(req: NextRequest) {
     }
   };
 
+  // Phase 4: resolve tier_id + billing_interval from a subscription. Prefers
+  // metadata stamped at checkout time; falls back to priceId lookup against
+  // pricing.ts so we still get the right tier even if metadata is missing
+  // (older subs created before Phase 4 wired metadata, manual Stripe Dashboard
+  // creation, etc).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const resolveTierFromSub = (sub: any): { tierId: TierId; interval: BillingInterval } | null => {
+    const meta = sub?.metadata ?? {};
+    const metaTier = meta.tier_id as TierId | undefined;
+    const metaInterval = meta.billing_interval as BillingInterval | undefined;
+    if (metaTier && metaInterval) {
+      return { tierId: metaTier, interval: metaInterval };
+    }
+
+    const priceId = sub?.items?.data?.[0]?.price?.id as string | undefined;
+    if (!priceId) return null;
+    const matched = getTierByStripePriceId(priceId);
+    if (!matched) return null;
+    return { tierId: matched.tier.id, interval: matched.interval };
+  };
+
   try {
     switch (event.type) {
       case "checkout.session.completed": {
@@ -144,23 +166,34 @@ export async function POST(req: NextRequest) {
         let priceId: string | null = null;
         let periodEnd: string | null = null;
         let status: string = "active";
+        let tierResolution: { tierId: TierId; interval: BillingInterval } | null = null;
         if (session.subscription) {
           const sub = await stripe.subscriptions.retrieve(session.subscription as string);
           subId = sub.id;
           priceId = sub.items.data[0]?.price.id ?? null;
           periodEnd = subPeriodEnd(sub);
           status = sub.status;
+          tierResolution = resolveTierFromSub(sub);
+        }
+
+        // Build the update object. Phase 4: also write tier + billing_interval
+        // (the new pricing schema columns) when we can resolve them from the sub.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const updatePayload: Record<string, any> = {
+          stripe_customer_id: session.customer as string,
+          stripe_subscription_id: subId,
+          subscription_status: status,
+          subscription_plan_id: priceId,
+          subscription_current_period_end: periodEnd,
+        };
+        if (tierResolution) {
+          updatePayload.tier = tierResolution.tierId;
+          updatePayload.billing_interval = tierResolution.interval;
         }
 
         await supabase
           .from("organizations")
-          .update({
-            stripe_customer_id: session.customer as string,
-            stripe_subscription_id: subId,
-            subscription_status: status,
-            subscription_plan_id: priceId,
-            subscription_current_period_end: periodEnd,
-          })
+          .update(updatePayload)
           .eq("id", orgId);
 
         // Phase 1.7: seed period_starts_at/ends_at and zero minute counter
@@ -179,14 +212,23 @@ export async function POST(req: NextRequest) {
           || await orgIdForCustomer(sub.customer as string);
         if (!orgId) break;
 
+        const tierResolution = resolveTierFromSub(sub);
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const updatePayload: Record<string, any> = {
+          stripe_subscription_id: sub.id,
+          subscription_status: sub.status,
+          subscription_plan_id: sub.items.data[0]?.price.id ?? null,
+          subscription_current_period_end: subPeriodEnd(sub),
+        };
+        if (tierResolution) {
+          updatePayload.tier = tierResolution.tierId;
+          updatePayload.billing_interval = tierResolution.interval;
+        }
+
         await supabase
           .from("organizations")
-          .update({
-            stripe_subscription_id: sub.id,
-            subscription_status: sub.status,
-            subscription_plan_id: sub.items.data[0]?.price.id ?? null,
-            subscription_current_period_end: subPeriodEnd(sub),
-          })
+          .update(updatePayload)
           .eq("id", orgId);
 
         // Phase 1.7: roll the minute period if Stripe just rotated the
@@ -203,9 +245,16 @@ export async function POST(req: NextRequest) {
         const sub = event.data.object as Stripe.Subscription;
         const orgId = await orgIdForCustomer(sub.customer as string);
         if (!orgId) break;
+        // Phase 4: revert tier to solo when sub is fully cancelled. Don't touch
+        // billing_interval (let the next checkout re-set it). This blocks
+        // outbound calls via wallet-guard's solo_trial_exhausted path once
+        // they've used 30 trial minutes.
         await supabase
           .from("organizations")
-          .update({ subscription_status: "canceled" })
+          .update({
+            subscription_status: "canceled",
+            tier: "solo",
+          })
           .eq("id", orgId);
         break;
       }
