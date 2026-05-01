@@ -92,6 +92,7 @@ const PROTECTED_PREFIXES = [
   '/people',
   '/phone-numbers',
   '/pipeline',
+  '/platform',
   '/reporting',
   '/reputation',
   '/settings',
