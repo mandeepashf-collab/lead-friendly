@@ -174,7 +174,22 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const session = await stripe.checkout.sessions.create({
+  // P9.1 4.1: Annual subscriptions surface an explicit consent line so the
+  // customer acknowledges the recurring annual charge. Stripe enforces this
+  // via consent_collection.terms_of_service='required' which gates the Pay
+  // button on a checkbox. The custom_text message restates the dollar amount
+  // and renewal cadence in plain English.
+  //
+  // PREREQUISITE: Stripe account must have a Terms of Service URL configured
+  // in Public details (https://dashboard.stripe.com/account/public). Without
+  // it, sessions.create() throws. If you see the error logged below, set the
+  // ToS URL and the next checkout will succeed.
+  const isAnnual = canonicalInterval === 'annual'
+  const consentMessage = isAnnual
+    ? `I understand my ${matched.tier.name} Annual subscription will charge $${matched.tier.annualPrice.toLocaleString()} today, and renew at $${matched.tier.annualPrice.toLocaleString()} every 12 months unless I cancel before then.`
+    : null
+
+  const sessionParams: Stripe.Checkout.SessionCreateParams = {
     mode: "subscription",
     customer: customerId,
     client_reference_id: org.id,
@@ -190,7 +205,38 @@ export async function POST(req: NextRequest) {
       metadata: { ...sharedMetadata, wl_addon: wlAddonAttached ? "1" : "0" },
     },
     metadata: { ...sharedMetadata, wl_addon: wlAddonAttached ? "1" : "0" },
-  });
+  }
+
+  if (isAnnual && consentMessage) {
+    sessionParams.consent_collection = { terms_of_service: 'required' }
+    sessionParams.custom_text = {
+      terms_of_service_acceptance: { message: consentMessage },
+    }
+  }
+
+  let session: Stripe.Checkout.Session
+  try {
+    session = await stripe.checkout.sessions.create(sessionParams)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    // Common cause: ToS URL not set on Stripe account when annual consent
+    // is required. Surface a clear error rather than the raw Stripe text.
+    if (isAnnual && /terms_of_service|terms of service/i.test(message)) {
+      console.error('[stripe/checkout] annual ToS error:', message)
+      return NextResponse.json(
+        {
+          error:
+            'Annual checkout requires a Terms of Service URL on your Stripe account. Set it in Public details and retry.',
+        },
+        { status: 500 },
+      )
+    }
+    console.error('[stripe/checkout] session.create failed:', message)
+    return NextResponse.json(
+      { error: `Stripe error: ${message}` },
+      { status: 500 },
+    )
+  }
 
   return NextResponse.json({ url: session.url, sessionId: session.id, wlAddonAttached });
 }
