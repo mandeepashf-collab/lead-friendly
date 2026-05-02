@@ -37,3 +37,5 @@ __pycache__/
 .venv/
 venv/
 scripts/tsc-output.txt
+tsc-stdout.txt
+
