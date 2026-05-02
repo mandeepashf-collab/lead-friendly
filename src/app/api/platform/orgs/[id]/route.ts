@@ -28,7 +28,9 @@ export async function GET(
   const { data: org, error } = await admin
     .from('organizations')
     .select(
-      'id, name, plan, is_agency, parent_organization_id, is_active, agency_billed_amount, ai_minutes_limit, primary_color, portal_name, custom_domain',
+      // P9.0 bug 3: include both `tier` and `plan` so divergence is visible.
+      // See /api/platform/orgs/route.ts for context.
+      'id, name, tier, plan, is_agency, parent_organization_id, is_active, agency_billed_amount, ai_minutes_limit, primary_color, portal_name, custom_domain',
     )
     .eq('id', id)
     .maybeSingle()

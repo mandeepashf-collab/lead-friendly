@@ -25,7 +25,11 @@ export async function GET(req: NextRequest) {
   let q = admin
     .from('organizations')
     .select(
-      'id, name, plan, is_agency, parent_organization_id, is_active, agency_billed_amount, ai_minutes_limit',
+      // P9.0 bug 3: include both `tier` (canonical billing column, set by
+      // Stripe webhook) and `plan` (agency-set label via create_sub_account
+      // RPC). They diverge for free orgs and agency-created sub-accounts.
+      // Platform admin shows both so divergence is visible.
+      'id, name, tier, plan, is_agency, parent_organization_id, is_active, agency_billed_amount, ai_minutes_limit',
     )
     .order('id', { ascending: true })
     .limit(limit)

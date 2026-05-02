@@ -22,6 +22,7 @@ import {
 interface OrgDetail {
   id: string
   name: string
+  tier: string | null
   plan: string | null
   is_agency: boolean
   parent_organization_id: string | null
@@ -147,10 +148,35 @@ export default async function PlatformOrgDetailPage({
             <dt className="text-zinc-500">ID</dt>
             <dd className="font-mono text-xs text-zinc-300">{org.id}</dd>
           </div>
-          <div className="flex justify-between">
-            <dt className="text-zinc-500">Plan</dt>
-            <dd className="text-zinc-300">{org.plan ?? '—'}</dd>
-          </div>
+          {(() => {
+            // P9.0 bug 3: surface tier (canonical billing) and plan (agency
+            // label) side-by-side. They diverge for free orgs and agency-
+            // created sub-accounts. Amber when mismatched so it's obvious.
+            const mismatch =
+              org.tier != null && org.plan != null && org.tier !== org.plan
+            const valueClass = mismatch ? 'text-amber-300' : 'text-zinc-300'
+            return (
+              <>
+                <div className="flex justify-between">
+                  <dt className="text-zinc-500">Tier (billing)</dt>
+                  <dd className={valueClass}>{org.tier ?? '—'}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-zinc-500">
+                    Plan (agency label)
+                    {mismatch && (
+                      <span
+                        className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-amber-400 align-middle"
+                        title="Tier and plan disagree"
+                        aria-label="Tier and plan disagree"
+                      />
+                    )}
+                  </dt>
+                  <dd className={valueClass}>{org.plan ?? '—'}</dd>
+                </div>
+              </>
+            )
+          })()}
           <div className="flex justify-between">
             <dt className="text-zinc-500">Type</dt>
             <dd className="text-zinc-300">

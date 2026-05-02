@@ -13,6 +13,7 @@ import { ChevronRight, Building2 } from 'lucide-react'
 interface OrgRow {
   id: string
   name: string
+  tier: string | null
   plan: string | null
   is_agency: boolean
   parent_organization_id: string | null
@@ -87,7 +88,7 @@ export default async function PlatformOrgsPage({
           <thead className="bg-zinc-900/50 text-left text-xs uppercase tracking-wider text-zinc-500">
             <tr>
               <th className="px-4 py-2.5">Name</th>
-              <th className="px-4 py-2.5">Plan</th>
+              <th className="px-4 py-2.5">Tier · Plan</th>
               <th className="px-4 py-2.5">Type</th>
               <th className="px-4 py-2.5">Active</th>
               <th className="px-4 py-2.5">Billed</th>
@@ -113,7 +114,28 @@ export default async function PlatformOrgsPage({
                     {org.name}
                   </Link>
                 </td>
-                <td className="px-4 py-2.5 text-zinc-300">{org.plan ?? '—'}</td>
+                <td className="px-4 py-2.5 text-zinc-300">
+                  {(() => {
+                    const tierLabel = org.tier ?? '—'
+                    const planLabel = org.plan ?? '—'
+                    const mismatch =
+                      org.tier != null && org.plan != null && org.tier !== org.plan
+                    return (
+                      <span className="inline-flex items-center gap-1.5">
+                        {mismatch && (
+                          <span
+                            className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400"
+                            title={`tier=${tierLabel} but plan=${planLabel}`}
+                            aria-label="Tier and plan disagree"
+                          />
+                        )}
+                        <span className={mismatch ? 'text-amber-300' : ''}>
+                          {tierLabel} · {planLabel}
+                        </span>
+                      </span>
+                    )
+                  })()}
+                </td>
                 <td className="px-4 py-2.5 text-zinc-300">
                   {org.is_agency
                     ? 'Agency'
