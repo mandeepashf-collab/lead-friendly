@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { ImpersonationBanner } from "@/components/agency/ImpersonationBanner";
 import { BrandPreviewBanner } from "@/components/branding/BrandPreviewBanner";
+import { BillingBanner } from "@/components/billing/BillingBanner";
 import { PlatformShortcutListener } from "@/components/platform/PlatformShortcutListener";
 import { useSidebarStore } from "@/store/sidebar";
 import { useBrand } from "@/contexts/BrandContext";
@@ -27,6 +28,7 @@ export default function DashboardLayout({
         <div className={cn("min-h-screen bg-zinc-950 text-zinc-100", showTopBanner && "pt-10")}>
           <ImpersonationBanner />
           <BrandPreviewBanner />
+          <BillingBanner />
           <PlatformShortcutListener />
           <Sidebar />
           <Header />

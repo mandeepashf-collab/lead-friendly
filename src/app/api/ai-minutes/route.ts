@@ -26,6 +26,7 @@ import { getTierById } from '@/config/pricing'
  *     overageRatePerMinute: number,    // dollars per minute for overage
  *     tier: string,                    // 'starter' | 'pro' | ...
  *     billingInterval: string | null,  // 'monthly' | 'annual' | null (free/trial)
+ *     subscriptionStatus: string | null, // 'active' | 'trialing' | 'past_due' | 'canceled' | ...
  *     periodEndsAt: string | null,     // ISO date when bundle resets
  *     isSubAccount: boolean,           // Phase 8: true if viewing org is a sub-account
  *     billingOrgName: string | null,   // parent agency's name when sub-account
@@ -79,7 +80,7 @@ export async function GET() {
       supabase
         .from('organizations')
         .select(
-          'tier, billing_interval, current_period_minutes_used, current_period_ends_at, custom_included_minutes, custom_overage_rate_x10000',
+          'tier, billing_interval, current_period_minutes_used, current_period_ends_at, custom_included_minutes, custom_overage_rate_x10000, subscription_status',
         )
         .eq('id', billingOrgId)
         .maybeSingle(),
@@ -138,6 +139,7 @@ export async function GET() {
       overageRatePerMinute,
       tier: org.tier,
       billingInterval: org.billing_interval,
+      subscriptionStatus: (org as { subscription_status?: string | null }).subscription_status ?? null,
       periodEndsAt: org.current_period_ends_at,
       isSubAccount,
       billingOrgName:
