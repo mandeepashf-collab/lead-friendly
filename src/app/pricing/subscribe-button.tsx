@@ -65,19 +65,20 @@ export function SubscribeButton({
         return
       }
 
-      // Signed in — go straight to Stripe Checkout. If the proxy says
-      // otherwise (e.g. session expired between getUser() and POST), fall
-      // back to register with priceId preserved so the user lands somewhere
-      // useful instead of seeing a JSON parse error.
+      // Signed in — go straight to Stripe Checkout. P9.0 (bug 4 fix): for a
+      // confirmed-signed-in user, server-side auth failures route to /login
+      // (with checkout intent preserved so postLoginRedirect resumes), and
+      // any other server failure surfaces as an error message. Routing to
+      // /register here was the pricing→signup loop bug from May 1.
       let res: Response
       try {
         res = await fetch('/api/stripe/checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ priceId, tierId, interval, includeWhiteLabel }),
-          // Don't auto-follow proxy redirects — we want to detect signed-out
-          // state (which the proxy answers with a 307 to /login) and fall
-          // back to the register route instead of getting an HTML page back.
+          // Don't auto-follow proxy redirects — detect a 307→/login from the
+          // proxy as opaqueredirect so we can route to /login (resume) rather
+          // than parsing an HTML login page as JSON.
           redirect: 'manual',
         })
       } catch (err) {
@@ -86,25 +87,26 @@ export function SubscribeButton({
         return
       }
 
-      // 401/redirect → server says we're not actually signed in.
-      // res.type === 'opaqueredirect' is what fetch returns when redirect:
-      // 'manual' encounters a 3xx.
+      // 401/redirect → server-side session is stale. User confirmed signed-in
+      // client-side moments ago, so this is a session-expiry edge case. Send
+      // to /login (which knows how to resume checkout via postLoginRedirect),
+      // NOT /register — they already have an account.
       if (res.type === 'opaqueredirect' || res.status === 401 || res.status === 0) {
         router.push(
-          `/register?plan=${tierId}&interval=${interval}&priceId=${encodeURIComponent(priceId)}`,
+          `/login?plan=${tierId}&interval=${interval}&priceId=${encodeURIComponent(priceId)}`,
         )
         return
       }
 
-      // Try to parse JSON. If the response was non-JSON for any reason,
-      // fall back to register so the user has a path forward.
+      // Try to parse JSON. A non-JSON response from a non-redirect status
+      // is a server bug — surface it instead of routing them somewhere
+      // confusing. Punting to /register here was the loop bug.
       let data: { url?: string; sessionId?: string; error?: string } = {}
       try {
         data = await res.json()
       } catch {
-        router.push(
-          `/register?plan=${tierId}&interval=${interval}&priceId=${encodeURIComponent(priceId)}`,
-        )
+        setError(`Checkout failed (HTTP ${res.status}). Please try again or contact support.`)
+        setLoading(false)
         return
       }
 
