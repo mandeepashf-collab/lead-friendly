@@ -8,7 +8,8 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SettingsTabs } from '@/components/settings/SettingsTabs'
-import { WALLET_DEFAULTS, formatCents } from '@/config/pricing'
+import { WALLET_DEFAULTS, formatCents, getTierById, recommendUpgrade } from '@/config/pricing'
+import type { TierId } from '@/config/pricing'
 
 // ────────────────────────────────────────────────────────────────────────
 // Types — match the JSON shapes returned by the billing APIs
@@ -20,6 +21,7 @@ interface AiMinutesResponse {
   overageMinutes: number
   tier: string
   billingInterval: string | null
+  subscriptionStatus: string | null
   periodEndsAt: string | null
   wallet: WalletState | null
 }
@@ -152,6 +154,14 @@ function PlanCard({
   const intervalLabel = data.billingInterval === 'annual' ? 'Annual' : data.billingInterval === 'monthly' ? 'Monthly' : null
   const isPaid = data.tier !== 'solo' && data.tier !== 'custom'
 
+  // P9.1 5.1: surface recommendUpgrade() hint when current usage suggests a
+  // higher tier would cost less. Uses current-period `used` as a rough proxy
+  // for monthly average — accurate at end of period, low-balls at start. Good
+  // enough for an opt-in hint; bad enough that we never auto-charge on it.
+  // Only relevant for starter/pro (function returns null for solo/agency/custom/founding).
+  const currentTier = getTierById(data.tier as TierId)
+  const upgradeRec = currentTier ? recommendUpgrade(currentTier, data.used) : null
+
   return (
     <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-6">
       <div className="flex items-start justify-between gap-4">
@@ -176,6 +186,15 @@ function PlanCard({
               ? '30-minute trial · Upgrade to a paid plan to unlock more'
               : 'Subscription managed by your account team'}
           </p>
+          {upgradeRec && (
+            <a
+              href={`/pricing?upgrade=${upgradeRec.id}`}
+              className="inline-flex items-center gap-1 mt-2 text-xs font-medium text-emerald-400 hover:text-emerald-300"
+            >
+              <ArrowUpRight className="h-3 w-3" />
+              Based on your usage, {upgradeRec.name} would cost less
+            </a>
+          )}
         </div>
 
         <div className="flex flex-col items-end gap-2 shrink-0">
