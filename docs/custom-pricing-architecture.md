@@ -202,7 +202,7 @@ code.**
 
 ## Platform admin UX (the contract builder)
 
-Replaces the current `/platform/orgs/[id]/custom-pricing` form (the one in
+Replaces the current `/platform/orgs/[id]/pricing` form (the one in
 your screenshot). New form has:
 
 | Field | Type | Required | Notes |
@@ -442,4 +442,18 @@ contract without going through full re-checkout.
 
 - May 2, 2026: Memo drafted. Pre-paid bundle model selected over post-paid
   metered. Reuses existing wallet+overage infrastructure. Phased D1–D5.
+- May 2, 2026 (D2 decisions): (1) No sanity-check warning — auto-compute
+  prevents the underlying mismatch and a warning would false-positive on
+  rounding. (2) Material edit = changes to monthly_fee, included_minutes,
+  overage_rate, billing_interval, or wl_fee (incl. null↔value transitions);
+  these archive old Stripe Prices and create new ones. Non-material =
+  framing_rate or note only; columns + audit only, no Stripe calls.
+  Archived Prices do NOT migrate existing subscriptions — they continue
+  on the old Price until manual cancel/re-checkout (matches the
+  Renegotiation flow above). (3) Founding mutex is soft-warn with required
+  checkbox in the form; server-side guard rejects without
+  `force_replace_founding=true` (HTTP 409 with `founding_replace_required`
+  flag). Founding slot stays consumed when replaced — slot is the cost of
+  the perpetual locked-in rate the customer is walking away from; not
+  reclaimed.
 - _(future entries here as decisions land)_

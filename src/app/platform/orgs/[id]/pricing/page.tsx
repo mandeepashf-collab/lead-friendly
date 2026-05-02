@@ -41,7 +41,7 @@ export default async function CustomPricingPage({ params }: PageProps) {
     admin
       .from('organizations')
       .select(
-        'id, name, tier, billing_interval, custom_included_minutes, custom_overage_rate_x10000, custom_monthly_fee_cents, custom_pricing_note, custom_pricing_set_at, custom_pricing_set_by, parent_organization_id',
+        'id, name, tier, billing_interval, custom_included_minutes, custom_overage_rate_x10000, custom_monthly_fee_cents, custom_framing_rate_x10000, custom_wl_fee_cents, custom_billing_interval, custom_stripe_product_id, custom_stripe_price_id, custom_wl_stripe_price_id, custom_contract_archived_at, custom_pricing_note, custom_pricing_set_at, custom_pricing_set_by, parent_organization_id',
       )
       .eq('id', orgId)
       .maybeSingle(),
@@ -77,10 +77,16 @@ export default async function CustomPricingPage({ params }: PageProps) {
       <CustomPricingForm
         orgId={orgId}
         initialValues={{
-          custom_included_minutes: orgRes.data.custom_included_minutes,
-          custom_overage_rate_x10000: orgRes.data.custom_overage_rate_x10000,
+          tier: orgRes.data.tier,
           custom_monthly_fee_cents: orgRes.data.custom_monthly_fee_cents,
+          custom_included_minutes: orgRes.data.custom_included_minutes,
+          custom_framing_rate_x10000: orgRes.data.custom_framing_rate_x10000,
+          custom_overage_rate_x10000: orgRes.data.custom_overage_rate_x10000,
+          custom_wl_fee_cents: orgRes.data.custom_wl_fee_cents,
+          custom_billing_interval: orgRes.data.custom_billing_interval,
           custom_pricing_note: orgRes.data.custom_pricing_note,
+          custom_stripe_price_id: orgRes.data.custom_stripe_price_id,
+          custom_contract_archived_at: orgRes.data.custom_contract_archived_at,
         }}
       />
 
