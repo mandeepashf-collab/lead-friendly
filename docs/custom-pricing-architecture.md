@@ -187,16 +187,18 @@ contract is materially edited (see "Renegotiation" below).
 
 1. `record_call_usage` RPC runs (existing).
 2. RPC reads `custom_included_minutes` and `custom_overage_rate_x10000` if
-   `tier='custom'` (existing logic in mig 038/039 already handles this).
+   `tier='custom'`. (Drift fix in mig 044 — see D3 decision log entry.
+   Earlier draft claimed this was "already handled" in mig 038/039; it was
+   not, the prod RPC was hot-patched without a tracked migration.)
 3. Updates `current_period_minutes_used`. If past bundle, debits wallet at
-   custom overage rate. **No new code.**
+   custom overage rate.
 
 ### Wallet auto-reload
 
-Same as today. `org_wallets` row exists for every org including custom orgs.
+Same as today. `org_wallets` row exists for every org including custom orgs
+(D3 webhook ensures this defensively for any edge-case org missing one).
 Auto-reload defaults: enabled, threshold $10, reload $50. Customer adjusts in
-`/settings/billing`. Custom contracts get the exact same wallet UX. **No new
-code.**
+`/settings/billing`. Custom contracts get the exact same wallet UX.
 
 ---
 
@@ -456,4 +458,30 @@ contract without going through full re-checkout.
   flag). Founding slot stays consumed when replaced — slot is the cost of
   the perpetual locked-in rate the customer is walking away from; not
   reclaimed.
+- May 2, 2026 (D3 corrigendum + decisions): D3 audit revealed two
+  inaccuracies in this memo's earlier claims, both corrected as part of
+  D3 ship. **First**, the "When a call ends" section claimed
+  `record_call_usage` "(existing logic in mig 038/039 already handles
+  this) — no new code". Inspecting prod showed the deployed RPC body
+  already reads `custom_included_minutes` / `custom_overage_rate_x10000`
+  from the org row (a hot-patch after mig 039 that never landed in a
+  tracked migration), but mig 039 in the repo is stale. Mig 044 captures
+  the deployed body so repo + prod match — drift fix, not behavior change.
+  **Second**, `wallet-guard.ts` had a `tier === 'custom'` early-return
+  that bypassed wallet rules ("trust the manual setup, no auto-block"
+  Phase 8 stub). Now that custom contracts pay via Stripe and overage
+  debits the wallet, custom must follow the same wallet rules as paid
+  tiers — branch removed. Decisions: (1) keep webhook tier-resolution
+  ordering metadata → standard pricing → custom contract Price-ID lookup;
+  the metadata path is preferred but the lookup path catches subs created
+  outside our checkout (e.g. manual Stripe Dashboard). (2) WL detection
+  for custom contracts uses per-org `custom_wl_stripe_price_id` lookup
+  alongside the global Agency add-on Price IDs. (3) On
+  `subscription.deleted` for a custom contract, set
+  `custom_contract_archived_at = now()` so stale Stripe Price IDs stop
+  matching webhook replays. Existing tier-revert (`tier='solo'`,
+  `is_white_label_enabled=false`) unchanged. (4) Defensive wallet creation:
+  custom-tier subscription events now ensure an `org_wallets` row exists
+  for the org (idempotent upsert). Self-heals the rare edge case where
+  an org slipped through mig 036's backfill.
 - _(future entries here as decisions land)_

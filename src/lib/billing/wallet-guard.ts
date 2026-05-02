@@ -175,16 +175,15 @@ export async function checkOutboundCallAllowed(
       }
     }
 
-    // Custom: trust the manual setup, no auto-block
-    if (tier.id === 'custom') {
-      return {
-        allowed: true,
-        bundleMinutesRemaining: effectiveIncludedMinutes - minutesUsed,
-        walletBalanceCents: wallet?.balance_cents ?? 0,
-      }
-    }
+    // D3: custom-tier orgs flow into the paid-tier wallet logic below.
+    // Previously this had a "trust the manual setup, no auto-block" early
+    // return — that was a Phase 8 stub from when custom meant manual invoicing.
+    // Now custom contracts pay via Stripe (D2) and overage debits the wallet
+    // via record_call_usage (D3 mig 044), so they need the same wallet rules
+    // as starter/pro/agency: block at zero balance, allow within bundle,
+    // require ~1min overage cents to start a new call once bundle exhausts.
 
-    // Paid tiers (starter/pro/agency/founding) — wallet rules apply
+    // Paid tiers (starter/pro/agency/founding/custom) — wallet rules apply
     if (!wallet) {
       // Defensive — every org should have a wallet row from migration 036 backfill
       return {

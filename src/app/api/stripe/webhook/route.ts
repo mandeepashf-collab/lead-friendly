@@ -7,6 +7,11 @@ import {
   type TierId,
   type BillingInterval,
 } from "@/config/pricing";
+import {
+  getCustomContractByPriceId,
+  isCustomContractWlPriceId,
+  ensureOrgWallet,
+} from "@/lib/billing/custom-contract";
 
 /**
  * POST /api/stripe/webhook
@@ -116,9 +121,9 @@ export async function POST(req: NextRequest) {
 
   // Helper: call the reset_minute_period RPC. Idempotent on the DB side,
   // so safe to call from any subscription event that includes a period.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const maybeRollPeriod = async (
     orgId: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     sub: any,
     source: 'stripe_webhook' | 'initial_subscription',
   ): Promise<void> => {
@@ -144,8 +149,11 @@ export async function POST(req: NextRequest) {
   // pricing.ts so we still get the right tier even if metadata is missing
   // (older subs created before Phase 4 wired metadata, manual Stripe Dashboard
   // creation, etc).
+  // D3: also falls through to per-org custom contract lookup if neither
+  // metadata nor pricing.ts matches — this is how D2-created custom contract
+  // Prices get recognized.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const resolveTierFromSub = (sub: any): { tierId: TierId; interval: BillingInterval } | null => {
+  const resolveTierFromSub = async (sub: any): Promise<{ tierId: TierId; interval: BillingInterval } | null> => {
     const meta = sub?.metadata ?? {};
     const metaTier = meta.tier_id as TierId | undefined;
     const metaInterval = meta.billing_interval as BillingInterval | undefined;
@@ -155,23 +163,51 @@ export async function POST(req: NextRequest) {
 
     // Phase 8: when looking up tier from line items, IGNORE the WL add-on
     // price ID (it doesn't represent a tier). Find the first non-WL line item.
+    // D3: also ignore custom-contract WL Price IDs (per-org WL line items).
     const items = sub?.items?.data ?? [];
+    // Build the set of price IDs to consider as "tier" candidates by
+    // excluding any that match a custom-contract WL Price.
+    let tierPriceId: string | undefined;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tierItem = items.find((it: any) => !isWhiteLabelAddonPriceId(it?.price?.id));
-    const priceId = tierItem?.price?.id as string | undefined;
-    if (!priceId) return null;
-    const matched = getTierByStripePriceId(priceId);
-    if (!matched) return null;
-    return { tierId: matched.tier.id, interval: matched.interval };
+    for (const it of items as any[]) {
+      const pid = it?.price?.id as string | undefined;
+      if (!pid) continue;
+      if (isWhiteLabelAddonPriceId(pid)) continue;
+      if (await isCustomContractWlPriceId(supabase, pid)) continue;
+      tierPriceId = pid;
+      break;
+    }
+    if (!tierPriceId) return null;
+
+    const matched = getTierByStripePriceId(tierPriceId);
+    if (matched) {
+      return { tierId: matched.tier.id, interval: matched.interval };
+    }
+
+    // D3: fall through to per-org custom contract resolution.
+    const customMatch = await getCustomContractByPriceId(supabase, tierPriceId);
+    if (customMatch) {
+      return { tierId: customMatch.tierId, interval: customMatch.interval };
+    }
+
+    return null;
   };
 
   // Phase 8: detect WL add-on by scanning all subscription line items.
   // Returns true if any line item's price.id matches a WL add-on price.
+  // D3: also recognize per-org custom-contract WL Price IDs (created in D2's
+  // PATCH handler when the contract has WL enabled).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const subHasWlAddon = (sub: any): boolean => {
+  const subHasWlAddon = async (sub: any): Promise<boolean> => {
     const items = sub?.items?.data ?? [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return items.some((it: any) => isWhiteLabelAddonPriceId(it?.price?.id));
+    for (const it of items as any[]) {
+      const pid = it?.price?.id as string | undefined;
+      if (!pid) continue;
+      if (isWhiteLabelAddonPriceId(pid)) return true;
+      if (await isCustomContractWlPriceId(supabase, pid)) return true;
+    }
+    return false;
   };
 
   try {
@@ -188,13 +224,16 @@ export async function POST(req: NextRequest) {
         let periodEnd: string | null = null;
         let status: string = "active";
         let tierResolution: { tierId: TierId; interval: BillingInterval } | null = null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let subForWl: any = null;
         if (session.subscription) {
           const sub = await stripe.subscriptions.retrieve(session.subscription as string);
           subId = sub.id;
           priceId = sub.items.data[0]?.price.id ?? null;
           periodEnd = subPeriodEnd(sub);
           status = sub.status;
-          tierResolution = resolveTierFromSub(sub);
+          tierResolution = await resolveTierFromSub(sub);
+          subForWl = sub;
         }
 
         // Build the update object. Phase 4: also write tier + billing_interval
@@ -212,21 +251,23 @@ export async function POST(req: NextRequest) {
           updatePayload.tier = tierResolution.tierId;
           updatePayload.billing_interval = tierResolution.interval;
         }
-        // Phase 8: WL flag derived from line items in the retrieved subscription
-        if (session.subscription) {
-          // The `sub` object was retrieved above for tierResolution; refetch is
-          // unnecessary but we need the variable in this scope. Re-retrieve once
-          // for clarity (Stripe caches; this is cheap).
-          const subForWl = await stripe.subscriptions.retrieve(session.subscription as string);
-          updatePayload.is_white_label_enabled = subHasWlAddon(subForWl);
-        } else {
-          updatePayload.is_white_label_enabled = false;
-        }
+        // Phase 8 / D3: WL flag derived from line items. Includes both the
+        // global Agency WL add-on and per-org custom-contract WL Prices.
+        updatePayload.is_white_label_enabled = subForWl
+          ? await subHasWlAddon(subForWl)
+          : false;
 
         await supabase
           .from("organizations")
           .update(updatePayload)
           .eq("id", orgId);
+
+        // D3: when a custom contract goes live via Checkout, ensure the org
+        // has a wallet row so overage debits land somewhere. Most orgs already
+        // have one from mig 036 backfill; this self-heals the edge case.
+        if (tierResolution?.tierId === 'custom') {
+          await ensureOrgWallet(supabase, orgId);
+        }
 
         // Phase 7: if this is a Founding tier checkout, atomically claim
         // a spot in the founding_member_counter and assign a member number
@@ -273,7 +314,8 @@ export async function POST(req: NextRequest) {
           || await orgIdForCustomer(sub.customer as string);
         if (!orgId) break;
 
-        const tierResolution = resolveTierFromSub(sub);
+        const tierResolution = await resolveTierFromSub(sub);
+        const wlEnabled = await subHasWlAddon(sub);
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const updatePayload: Record<string, any> = {
@@ -281,9 +323,11 @@ export async function POST(req: NextRequest) {
           subscription_status: sub.status,
           subscription_plan_id: sub.items.data[0]?.price.id ?? null,
           subscription_current_period_end: subPeriodEnd(sub),
-          // Phase 8: WL flag tracks current line items. Removing the WL price
-          // from the subscription disables WL on next webhook.
-          is_white_label_enabled: subHasWlAddon(sub),
+          // Phase 8 / D3: WL flag tracks current line items. Removing the WL
+          // price from the subscription disables WL on next webhook. Includes
+          // both the global Agency WL add-on and per-org custom-contract WL
+          // Prices.
+          is_white_label_enabled: wlEnabled,
         };
         if (tierResolution) {
           updatePayload.tier = tierResolution.tierId;
@@ -294,6 +338,12 @@ export async function POST(req: NextRequest) {
           .from("organizations")
           .update(updatePayload)
           .eq("id", orgId);
+
+        // D3: ensure wallet exists for custom orgs (defensive — most orgs
+        // already have one from mig 036 backfill).
+        if (tierResolution?.tierId === 'custom') {
+          await ensureOrgWallet(supabase, orgId);
+        }
 
         // Phase 1.7: roll the minute period if Stripe just rotated the
         // subscription onto a new billing cycle. RPC is idempotent against
@@ -309,18 +359,54 @@ export async function POST(req: NextRequest) {
         const sub = event.data.object as Stripe.Subscription;
         const orgId = await orgIdForCustomer(sub.customer as string);
         if (!orgId) break;
+
+        // D3: if the cancelled sub was on a custom contract, also archive
+        // the contract so its Stripe Price IDs stop matching future webhook
+        // events (e.g. if Stripe replays an old event after we re-issue a
+        // contract). We detect this by checking if any line item's price
+        // matches the org's saved custom_stripe_price_id. We don't use
+        // resolveTierFromSub here because at deletion time the metadata
+        // and price-id lookups should still find the contract — but if for
+        // some reason they don't, we still want the column flips below.
+        let archiveCustomContract = false;
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const items = (sub as any)?.items?.data ?? [];
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          for (const it of items as any[]) {
+            const pid = it?.price?.id as string | undefined;
+            if (!pid) continue;
+            const match = await getCustomContractByPriceId(supabase, pid);
+            if (match && match.orgId === orgId) {
+              archiveCustomContract = true;
+              break;
+            }
+          }
+        } catch (err) {
+          console.warn(
+            '[STRIPE WEBHOOK] custom-contract archive lookup failed:',
+            err instanceof Error ? err.message : err,
+          );
+        }
+
         // Phase 4: revert tier to solo when sub is fully cancelled. Don't touch
         // billing_interval (let the next checkout re-set it). This blocks
         // outbound calls via wallet-guard's solo_trial_exhausted path once
         // they've used 30 trial minutes.
         // Phase 8: also clear WL flag — subscription canceled means no add-on.
+        // D3: archive the custom contract if one was tied to this sub.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const cancelPayload: Record<string, any> = {
+          subscription_status: "canceled",
+          tier: "solo",
+          is_white_label_enabled: false,
+        };
+        if (archiveCustomContract) {
+          cancelPayload.custom_contract_archived_at = new Date().toISOString();
+        }
         await supabase
           .from("organizations")
-          .update({
-            subscription_status: "canceled",
-            tier: "solo",
-            is_white_label_enabled: false,
-          })
+          .update(cancelPayload)
           .eq("id", orgId);
         break;
       }
