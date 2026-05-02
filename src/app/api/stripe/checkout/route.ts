@@ -181,11 +181,9 @@ export async function POST(req: NextRequest) {
     line_items: lineItems,
     allow_promotion_codes: true,
     payment_method_collection: "always",
-    // Auto-tax: TEMPORARILY DISABLED for first smoke test. Stripe Tax
-    // requires Dashboard activation (Settings → Tax → Activate) and at
-    // least one tax-registration jurisdiction. Enable both, then flip
-    // this back to true and add `customer_update: { address: "auto", name: "auto" }`.
-    automatic_tax: { enabled: false },
+    billing_address_collection: 'required',
+    customer_update: { address: 'auto', name: 'auto' },
+    automatic_tax: { enabled: true },
     success_url: `${origin}/dashboard?subscription=success&tier=${canonicalTierId}&interval=${canonicalInterval}${wlAddonAttached ? "&wl=1" : ""}`,
     cancel_url: `${origin}/pricing?subscription=cancel`,
     subscription_data: {
