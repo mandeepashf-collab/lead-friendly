@@ -341,6 +341,100 @@ export function getTierByStripePriceId(
   return undefined
 }
 
+// =============================================================
+// CUSTOM CONTRACTS (D2)
+// =============================================================
+//
+// A custom contract is a per-customer negotiated deal stored on the
+// organizations row. Schema added in mig 043 (D1). The "tier" for these
+// orgs is `custom` but the operational numbers come from the org row
+// itself, not from a PricingTier constant.
+//
+// The shape below is what a fully-saved contract looks like. Partial
+// contracts (during creation, before Stripe Prices are stamped) have
+// stripe_product_id / stripe_price_id as null but everything else set.
+// A NEW contract that has not been saved yet has all fields null.
+
+/** Materialized custom contract on an org row. */
+export interface CustomContract {
+  /** Flat platform fee billed every period via Stripe. */
+  monthlyFeeCents: number
+  /** Bundle of minutes covered by the platform fee. No rollover. */
+  includedMinutes: number
+  /** Display rate (cents × 10000) used for invoice readouts. e.g. 850 = $0.085/min. */
+  framingRateX10000: number
+  /** Per-minute rate (× 10000) charged from wallet above the bundle. */
+  overageRateX10000: number
+  /** Optional white-label add-on fee. NULL when WL is not part of the contract. */
+  wlFeeCents: number | null
+  /** Cadence: monthly | annual. */
+  billingInterval: BillingInterval
+  /** Stripe Product created at first save. Reused on non-material edits. */
+  stripeProductId: string | null
+  /** Stripe Price for the platform-fee line item. */
+  stripePriceId: string | null
+  /** Stripe Price for the WL line item. NULL when no WL. */
+  wlStripePriceId: string | null
+  /** Set when contract is renegotiated/voided. Lookups should exclude archived. */
+  archivedAt: string | null
+}
+
+/** Subset of an organizations row sufficient to detect a custom contract. */
+export interface CustomContractOrgFields {
+  tier: TierId | string | null
+  custom_monthly_fee_cents: number | null
+  custom_included_minutes: number | null
+  custom_framing_rate_x10000: number | null
+  custom_overage_rate_x10000: number | null
+  custom_wl_fee_cents: number | null
+  custom_billing_interval: string | null
+  custom_stripe_product_id: string | null
+  custom_stripe_price_id: string | null
+  custom_wl_stripe_price_id: string | null
+  custom_contract_archived_at: string | null
+}
+
+/**
+ * Returns true if an org has a non-archived custom contract with the
+ * required fields populated. "Required" = monthly fee, included minutes,
+ * overage rate, and billing interval. Stripe IDs are NOT required because
+ * a contract may be saved before Stripe Price creation completes (e.g. if
+ * the Stripe call failed and the founder is retrying).
+ */
+export function isCustomContract(org: CustomContractOrgFields): boolean {
+  if (org.custom_contract_archived_at !== null) return false
+  return (
+    org.custom_monthly_fee_cents !== null
+    && org.custom_included_minutes !== null
+    && org.custom_overage_rate_x10000 !== null
+    && org.custom_billing_interval !== null
+  )
+}
+
+/**
+ * Materializes the contract from an org row. Returns null if not a custom
+ * contract (per isCustomContract). Use this anywhere downstream code wants
+ * to read the contract as an object rather than fishing through nullable
+ * org columns.
+ */
+export function getCustomContract(
+  org: CustomContractOrgFields,
+): CustomContract | null {
+  if (!isCustomContract(org)) return null
+  return {
+    monthlyFeeCents: org.custom_monthly_fee_cents!,
+    includedMinutes: org.custom_included_minutes!,
+    framingRateX10000: org.custom_framing_rate_x10000 ?? 0,
+    overageRateX10000: org.custom_overage_rate_x10000!,
+    wlFeeCents: org.custom_wl_fee_cents,
+    billingInterval: org.custom_billing_interval as BillingInterval,
+    stripeProductId: org.custom_stripe_product_id,
+    stripePriceId: org.custom_stripe_price_id,
+    wlStripePriceId: org.custom_wl_stripe_price_id,
+    archivedAt: org.custom_contract_archived_at,
+  }
+}
+
 /**
  * Calculates the customer's bill given tier and minutes used in current period.
  * Returns all values in CENTS.
